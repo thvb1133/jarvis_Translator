@@ -131,10 +131,11 @@ The web UI auto-deploys to **GitHub Pages** via
 
 **https://thvb1133.github.io/jarvis_Translator/**
 
-One-time setup (repo owner): **Settings → Pages → Source: GitHub Actions**. The
-workflow also attempts to enable Pages automatically. It runs on pushes to
-`main` (and `cursor/**` branches) and can be triggered manually from the Actions
-tab.
+**Required one-time setup (repo owner):** open **Settings → Pages → Source:
+GitHub Actions**. GitHub does not allow a workflow's default token to enable
+Pages on its own, so this single toggle must be done by hand once. After that,
+every push to `main` (or a `cursor/**` branch) deploys automatically, and the
+workflow can also be triggered manually from the Actions tab.
 
 > **Security note:** a Flutter *web* build bakes any `--dart-define` value into
 > client-side JavaScript. The workflow only injects `OPENAI_API_KEY` if you add

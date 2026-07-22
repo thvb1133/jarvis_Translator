@@ -4,8 +4,9 @@ name: Deploy Web (GitHub Pages)
 # Translator UI is available online. The live URL is:
 #   https://thvb1133.github.io/jarvis_Translator/
 #
-# One-time setup: in the repo Settings → Pages, set "Source" to "GitHub Actions"
-# (this workflow also attempts to enable it automatically).
+# REQUIRED one-time setup by the repo owner (GitHub does not let a workflow's
+# default token enable Pages by itself): open Settings → Pages and set
+# "Source" to "GitHub Actions". After that, every push here deploys the site.
 #
 # Note on secrets: OPENAI_API_KEY is optional here. If you add it as a repo
 # secret it will be baked into the web build so the public demo can translate —
@@ -56,8 +57,6 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
