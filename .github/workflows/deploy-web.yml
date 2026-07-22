@@ -1,0 +1,76 @@
+name: Deploy Web (GitHub Pages)
+
+# Builds the Flutter web app and publishes it to GitHub Pages so the JARVIS
+# Translator UI is available online. The live URL is:
+#   https://thvb1133.github.io/jarvis_Translator/
+#
+# One-time setup: in the repo Settings → Pages, set "Source" to "GitHub Actions"
+# (this workflow also attempts to enable it automatically).
+#
+# Note on secrets: OPENAI_API_KEY is optional here. If you add it as a repo
+# secret it will be baked into the web build so the public demo can translate —
+# but be aware a web build embeds the key in client-side JS, so for a truly
+# secure production web deployment you should proxy requests through a backend
+# (planned for phase 2). The native Android/desktop apps take the key at run
+# time and are the recommended way to use a real key.
+
+on:
+  push:
+    branches:
+      - main
+      - "cursor/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build web
+        run: |
+          flutter build web --release \
+            --base-href "/jarvis_Translator/" \
+            --dart-define=OPENAI_API_KEY="${OPENAI_API_KEY}"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -124,6 +124,27 @@ flutter run -d chrome  --dart-define=OPENAI_API_KEY=sk-...
 
 ---
 
+## Live web demo & deployment
+
+The web UI auto-deploys to **GitHub Pages** via
+[`.github/workflows/deploy-web.yml`](.github/workflows/deploy-web.yml):
+
+**https://thvb1133.github.io/jarvis_Translator/**
+
+One-time setup (repo owner): **Settings → Pages → Source: GitHub Actions**. The
+workflow also attempts to enable Pages automatically. It runs on pushes to
+`main` (and `cursor/**` branches) and can be triggered manually from the Actions
+tab.
+
+> **Security note:** a Flutter *web* build bakes any `--dart-define` value into
+> client-side JavaScript. The workflow only injects `OPENAI_API_KEY` if you add
+> it as a repo secret — do this only for a throwaway/demo key. For a real,
+> secure web deployment, proxy provider calls through a backend (phase 2). The
+> **native Android/desktop apps** take the key at run time and are the
+> recommended way to use a real key.
+
+---
+
 ## Using it
 
 1. Pick the **Translate to** language (and optionally set the speaker language,

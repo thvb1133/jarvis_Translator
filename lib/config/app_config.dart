@@ -32,6 +32,18 @@ class AppConfig {
 
   bool get hasOpenAiKey => openAiApiKey.trim().isNotEmpty;
 
+  AppConfig copyWith({ProviderMode? providerMode}) {
+    return AppConfig(
+      openAiApiKey: openAiApiKey,
+      openAiBaseUrl: openAiBaseUrl,
+      sttModel: sttModel,
+      translateModel: translateModel,
+      ttsModel: ttsModel,
+      ttsVoice: ttsVoice,
+      providerMode: providerMode ?? this.providerMode,
+    );
+  }
+
   /// Builds config from compile-time environment values.
   factory AppConfig.fromEnvironment() {
     const key = String.fromEnvironment('OPENAI_API_KEY', defaultValue: '');

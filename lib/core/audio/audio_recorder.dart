@@ -45,6 +45,20 @@ class MicRecorder {
     _isRecording = true;
   }
 
+  /// Emits a normalized microphone level in the range [0, 1] while recording,
+  /// used to drive the orb's live audio visualizer. Maps dBFS (which is <= 0)
+  /// onto a friendly range and degrades gracefully where a platform doesn't
+  /// report amplitude (the stream simply stays near 0).
+  Stream<double> amplitudeStream({
+    Duration interval = const Duration(milliseconds: 100),
+  }) {
+    return _recorder.onAmplitudeChanged(interval).map((amp) {
+      const minDb = -45.0;
+      final current = amp.current.isFinite ? amp.current : minDb;
+      return ((current - minDb) / -minDb).clamp(0.0, 1.0);
+    });
+  }
+
   /// Stops recording and returns the path of the captured WAV file (or null).
   Future<String?> stop() async {
     if (!_isRecording) return null;

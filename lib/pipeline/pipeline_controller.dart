@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
@@ -16,20 +18,45 @@ enum PipelineStatus { idle, listening, thinking, speaking, error }
 /// The mic is muted while speaking to avoid the app translating its own output.
 class PipelineController extends ChangeNotifier {
   PipelineController({
-    required this.config,
-    required this.registry,
+    required AppConfig config,
+    required ProviderRegistry registry,
     MicRecorder? recorder,
     AudioPlayback? playback,
-  })  : _recorder = recorder ?? MicRecorder(),
+  })  : _config = config,
+        _registry = registry,
+        _recorder = recorder ?? MicRecorder(),
         _playback = playback ?? AudioPlayback();
 
-  final AppConfig config;
-  final ProviderRegistry registry;
+  AppConfig _config;
+  AppConfig get config => _config;
+
+  ProviderRegistry _registry;
+  ProviderRegistry get registry => _registry;
+
   final MicRecorder _recorder;
   final AudioPlayback _playback;
 
+  ProviderMode get providerMode => _config.providerMode;
+
+  /// Swaps the active provider family (online ⇄ offline) at runtime. Everything
+  /// downstream depends only on the service interfaces, so rebuilding the
+  /// registry here is all that's required.
+  void setProviderMode(ProviderMode mode) {
+    if (mode == _config.providerMode) return;
+    _config = _config.copyWith(providerMode: mode);
+    _registry = ProviderRegistry(_config);
+    resetError();
+    notifyListeners();
+  }
+
   PipelineStatus _status = PipelineStatus.idle;
   PipelineStatus get status => _status;
+
+  /// Live, normalized microphone level (0..1) driving the orb visualizer.
+  /// Exposed as a [ValueListenable] so the orb can repaint on audio without
+  /// rebuilding the whole widget tree.
+  final ValueNotifier<double> audioLevel = ValueNotifier<double>(0);
+  StreamSubscription<double>? _levelSub;
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
@@ -81,10 +108,21 @@ class PipelineController extends ChangeNotifier {
     _setError(null);
     try {
       await _recorder.start();
+      _levelSub?.cancel();
+      _levelSub = _recorder.amplitudeStream().listen(
+        (v) => audioLevel.value = v,
+        onError: (_) {},
+      );
       _setStatus(PipelineStatus.listening);
     } catch (e) {
       _fail('Could not start recording: $e');
     }
+  }
+
+  Future<void> _stopLevelStream() async {
+    await _levelSub?.cancel();
+    _levelSub = null;
+    audioLevel.value = 0;
   }
 
   /// Push-to-talk release: stop capture and run the translation pipeline.
@@ -94,9 +132,11 @@ class PipelineController extends ChangeNotifier {
     try {
       audioPath = await _recorder.stop();
     } catch (e) {
+      await _stopLevelStream();
       _fail('Could not stop recording: $e');
       return;
     }
+    await _stopLevelStream();
 
     if (audioPath == null) {
       _setStatus(PipelineStatus.idle);
@@ -181,6 +221,8 @@ class PipelineController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _levelSub?.cancel();
+    audioLevel.dispose();
     _recorder.dispose();
     _playback.dispose();
     super.dispose();

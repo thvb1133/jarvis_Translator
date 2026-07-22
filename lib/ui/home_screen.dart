@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config/app_config.dart';
 import '../config/languages.dart';
 import '../pipeline/pipeline_controller.dart';
 import 'theme/app_theme.dart';
@@ -73,13 +74,15 @@ class _OrbSection extends StatelessWidget {
       child: Column(
         children: [
           const _Header(),
+          const SizedBox(height: 12),
+          _ModeToggle(controller: controller),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
                 // Scale the orb to the available space so it never overflows on
                 // short screens while staying large and cinematic on big ones.
-                final orbSize = (constraints.biggest.shortestSide * 0.72)
-                    .clamp(120.0, 300.0);
+                final orbSize = (constraints.biggest.shortestSide * 0.92)
+                    .clamp(180.0, 480.0);
                 return Center(
                   child: SingleChildScrollView(
                     child: Column(
@@ -112,7 +115,7 @@ class _OrbSection extends StatelessWidget {
                         ],
                         if (!controller.isReady) ...[
                           const SizedBox(height: 10),
-                          const _ApiKeyBanner(),
+                          _NotReadyBanner(controller: controller),
                         ],
                       ],
                     ),
@@ -158,7 +161,11 @@ class _PushToTalkOrb extends StatelessWidget {
           controller.stopAndTranslate();
         }
       },
-      child: JarvisOrb(status: controller.status, size: size),
+      child: JarvisOrb(
+        status: controller.status,
+        size: size,
+        level: controller.audioLevel,
+      ),
     );
   }
 }
@@ -189,6 +196,83 @@ class _Header extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ModeToggle extends StatelessWidget {
+  const _ModeToggle({required this.controller});
+
+  final PipelineController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: JarvisColors.panel.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(
+          color: JarvisColors.coreGlow.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _segment(
+            label: 'Online',
+            icon: Icons.cloud_outlined,
+            selected: controller.providerMode == ProviderMode.online,
+            onTap: () => controller.setProviderMode(ProviderMode.online),
+          ),
+          _segment(
+            label: 'Offline',
+            icon: Icons.wifi_off,
+            selected: controller.providerMode == ProviderMode.offline,
+            onTap: () => controller.setProviderMode(ProviderMode.offline),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _segment({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? JarvisColors.accent.withValues(alpha: 0.85)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: selected ? Colors.white : JarvisColors.textMuted,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.white : JarvisColors.textMuted,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -273,11 +357,19 @@ class _TranscriptSection extends StatelessWidget {
   }
 }
 
-class _ApiKeyBanner extends StatelessWidget {
-  const _ApiKeyBanner();
+class _NotReadyBanner extends StatelessWidget {
+  const _NotReadyBanner({required this.controller});
+
+  final PipelineController controller;
 
   @override
   Widget build(BuildContext context) {
+    final offline = controller.providerMode == ProviderMode.offline;
+    final message = offline
+        ? 'Offline engines (whisper.cpp · NLLB-200 · Piper) arrive in phase 2. '
+            'Switch to Online to translate now.'
+        : 'No API key detected. Run with '
+            '--dart-define=OPENAI_API_KEY=sk-… to enable translation.';
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -286,11 +378,10 @@ class _ApiKeyBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFFF6B7A).withValues(alpha: 0.4)),
       ),
-      child: const Text(
-        'No API key detected. Run with '
-        '--dart-define=OPENAI_API_KEY=sk-… to enable translation.',
+      child: Text(
+        message,
         textAlign: TextAlign.center,
-        style: TextStyle(color: Color(0xFFFFB3BC), fontSize: 12),
+        style: const TextStyle(color: Color(0xFFFFB3BC), fontSize: 12),
       ),
     );
   }
