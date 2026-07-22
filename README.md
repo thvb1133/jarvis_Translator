@@ -38,30 +38,37 @@ lib/
 │   ├── audio_recorder.dart    # push-to-talk capture (WAV, 16 kHz mono)
 │   └── audio_playback.dart    # plays synthesized speech, mic stays muted meanwhile
 ├── services/
-│   ├── stt/                   # SttService interface + OpenAI (online) + whisper.cpp (offline, phase 2)
-│   ├── translate/             # TranslateService interface + OpenAI (online) + NLLB-200 (offline, phase 2)
-│   ├── tts/                   # TtsService interface + OpenAI (online) + Piper (offline, phase 2)
-│   └── provider_registry.dart # selects online/offline implementations
+│   ├── stt/                   # SttService interface + OpenAI Whisper (cloud STT)
+│   ├── translate/             # TranslateService + OpenAI + Claude (direct or via proxy)
+│   ├── tts/                   # TtsService interface + OpenAI (cloud TTS)
+│   ├── voice/                 # VoiceInput/VoiceOutput + device/browser speech engines
+│   └── provider_registry.dart # picks translator + voice engine
 ├── pipeline/
 │   ├── pipeline_controller.dart # orchestrates the full flow + app state
 │   └── transcript_entry.dart
+├── api/translate.js           # Vercel serverless proxy (keeps the key server-side)
 └── ui/
     ├── home_screen.dart
     ├── theme/app_theme.dart
     └── widgets/                # jarvis_orb, space_background, transcript_view, language_selector
 ```
 
-### Provider modes (hybrid)
+### Two independent choices (both toggleable in the UI)
 
-- **Online (primary, shipped in the MVP):** best accuracy + full language
-  coverage via OpenAI — speech-to-text (Whisper), translation (a GPT chat
-  model), and natural text-to-speech.
-- **Offline (phase 2, interfaces in place):** whisper.cpp (STT), NLLB-200
-  (translation), Piper (TTS) for common languages, wired through the same
-  interfaces so the UI and pipeline don't change.
+**Translator**
+- **OpenAI** — a GPT chat model.
+- **Claude** — Anthropic. Great for translation; **note Claude does text only —
+  it has no speech-to-text or text-to-speech**, so pair it with the Device voice
+  engine below for a full voice translator.
 
-A realtime speech-to-speech path (for lower latency) can be added as another
-implementation behind the same STT/TTS interfaces.
+**Voice engine (listening + speaking)**
+- **Cloud** — OpenAI Whisper (STT) + OpenAI TTS. Highest quality; needs an
+  OpenAI key.
+- **Device** — the device's / browser's built-in speech via `speech_to_text` +
+  `flutter_tts`. **Free, no key, works offline on device**, and works in the
+  browser — this is what makes a **Claude-key-only** web deployment possible.
+
+So a **Claude-only** setup = **Translator: Claude** + **Voice engine: Device**.
 
 ---
 
@@ -79,48 +86,63 @@ implementation behind the same STT/TTS interfaces.
 flutter pub get
 ```
 
-### 3. Provide your API key (as a secret — never hardcoded)
+### 3. Provide keys via `--dart-define` (never hardcoded)
 
-The app reads secrets from the environment via `--dart-define`, which maps
-cleanly onto CI / Cloud Agent secrets. **OpenAI** is recommended to start because
-one provider covers speech→text, translation, and natural voice.
+Secrets are read from the environment via `--dart-define`, which maps cleanly
+onto CI / Cloud Agent / Vercel secrets.
+
+**Option A — Claude only (device/browser voice):** no OpenAI key needed.
 
 ```bash
-flutter run --dart-define=OPENAI_API_KEY=sk-your-key-here
+flutter run --dart-define=ANTHROPIC_API_KEY=sk-ant-... \
+            --dart-define=TRANSLATION_PROVIDER=claude \
+            --dart-define=VOICE_ENGINE=device
 ```
 
-If you're using a Cloud Agent, add `OPENAI_API_KEY` under **Cloud Agents →
-Secrets** and pass it through as a `--dart-define` in your run command.
+**Option B — OpenAI (cloud voice covers STT + translate + TTS):**
+
+```bash
+flutter run --dart-define=OPENAI_API_KEY=sk-...
+```
 
 #### Configurable environment values
 
-| Variable                 | Default              | Purpose                                  |
-| ------------------------ | -------------------- | ---------------------------------------- |
-| `OPENAI_API_KEY`         | _(required)_         | OpenAI API key                           |
-| `OPENAI_BASE_URL`        | `https://api.openai.com/v1` | Override for proxies / gateways   |
-| `OPENAI_STT_MODEL`       | `whisper-1`          | Speech-to-text model                     |
-| `OPENAI_TRANSLATE_MODEL` | `gpt-4o-mini`        | Translation model                        |
-| `OPENAI_TTS_MODEL`       | `gpt-4o-mini-tts`    | Text-to-speech model                     |
-| `OPENAI_TTS_VOICE`       | `alloy`              | Voice used for spoken output             |
-| `PROVIDER_MODE`          | `online`             | `online` or `offline` (phase 2)          |
+| Variable                 | Default                        | Purpose                                        |
+| ------------------------ | ------------------------------ | ---------------------------------------------- |
+| `TRANSLATION_PROVIDER`   | auto (`openai`/`claude`)       | Which translator to use                        |
+| `VOICE_ENGINE`           | `device` on web, else `cloud`  | `cloud` (OpenAI) or `device` (built-in speech) |
+| `OPENAI_API_KEY`         | _(empty)_                      | OpenAI key (cloud voice + OpenAI translate)    |
+| `OPENAI_BASE_URL`        | `https://api.openai.com/v1`    | Override for proxies / gateways                |
+| `OPENAI_STT_MODEL`       | `whisper-1`                    | Speech-to-text model                           |
+| `OPENAI_TRANSLATE_MODEL` | `gpt-4o-mini`                  | OpenAI translation model                       |
+| `OPENAI_TTS_MODEL`       | `gpt-4o-mini-tts`              | Text-to-speech model                           |
+| `OPENAI_TTS_VOICE`       | `alloy`                        | Voice used for spoken output                   |
+| `ANTHROPIC_API_KEY`      | _(empty)_                      | Claude key (translation)                       |
+| `ANTHROPIC_MODEL`        | `claude-3-5-sonnet-latest`     | Claude model                                   |
+| `TRANSLATE_PROXY_URL`    | _(empty)_                      | If set, translation goes through this URL (keeps keys server-side; e.g. `/api/translate`) |
 
-> Without a key, the app still launches and shows the JARVIS UI, but displays a
-> banner explaining that translation is disabled until a key is provided.
+> Without any usable key/proxy, the app still launches and shows the JARVIS UI
+> with a banner explaining what to add. You can also flip **Translator** and
+> **Voice engine** live from the toggles at the top of the screen.
 
 ### 4. Run
 
 ```bash
 # Android (device/emulator attached)
-flutter run -d android --dart-define=OPENAI_API_KEY=sk-...
+flutter run -d android --dart-define=ANTHROPIC_API_KEY=sk-ant-... --dart-define=VOICE_ENGINE=device
 
 # Desktop
 flutter run -d linux   --dart-define=OPENAI_API_KEY=sk-...
 flutter run -d macos   --dart-define=OPENAI_API_KEY=sk-...
 flutter run -d windows --dart-define=OPENAI_API_KEY=sk-...
 
-# Web (quick UI testing)
-flutter run -d chrome  --dart-define=OPENAI_API_KEY=sk-...
+# Web (quick UI testing) — uses device/browser voice by default
+flutter run -d chrome  --dart-define=ANTHROPIC_API_KEY=sk-ant-... --dart-define=TRANSLATION_PROVIDER=claude
 ```
+
+> Note on `flutter run -d chrome` locally: the Anthropic API blocks direct
+> browser calls (CORS), so for local *web* use either run the native app, or run
+> behind the Vercel proxy (below) which is the intended web path.
 
 ---
 
@@ -137,12 +159,42 @@ Pages on its own, so this single toggle must be done by hand once. After that,
 every push to `main` (or a `cursor/**` branch) deploys automatically, and the
 workflow can also be triggered manually from the Actions tab.
 
-> **Security note:** a Flutter *web* build bakes any `--dart-define` value into
-> client-side JavaScript. The workflow only injects `OPENAI_API_KEY` if you add
-> it as a repo secret — do this only for a throwaway/demo key. For a real,
-> secure web deployment, proxy provider calls through a backend (phase 2). The
-> **native Android/desktop apps** take the key at run time and are the
-> recommended way to use a real key.
+> **GitHub Pages is a static host with no serverless functions**, so it's a
+> **UI + browser-voice demo**; live translation from the browser is blocked by
+> provider CORS. For a fully working web app with translation, use the **Vercel**
+> deployment below (it ships a serverless proxy). The **native Android/desktop
+> apps** take a key at run time and are the most flexible way to use a real key.
+
+---
+
+## Deploy to Vercel with a Claude API key only
+
+This repo is Vercel-ready: [`vercel.json`](vercel.json) builds the Flutter web
+app, and [`api/translate.js`](api/translate.js) is a serverless function that
+calls Claude **server-side**, so your key never touches the browser. The web
+build is configured to use the **device/browser voice** engine, so **the only
+secret you need is your Claude key**.
+
+**Steps:**
+
+1. Push this repo to GitHub (already done) and go to
+   [vercel.com/new](https://vercel.com/new) → **Import** `jarvis_Translator`.
+2. Vercel reads `vercel.json` automatically (Framework Preset: **Other**). No
+   changes needed — it clones Flutter and runs `flutter build web`.
+3. In **Settings → Environment Variables**, add:
+   - `ANTHROPIC_API_KEY` = your Claude key (`sk-ant-...`)
+   - _(optional)_ `ANTHROPIC_MODEL` to pin a specific model.
+4. **Deploy.** The build produces `build/web`, and requests to `/api/translate`
+   are handled by the serverless function using your key.
+
+That's it — open the Vercel URL, press and hold the orb, and speak. Listening
+and speaking use the browser's built-in speech; translation runs through Claude
+on the server.
+
+> **Browser support:** speech recognition in the browser works best in
+> Chrome/Edge. Grant microphone permission when prompted. If a browser lacks
+> speech recognition, switch **Voice engine → Cloud** and add an `OPENAI_API_KEY`
+> instead.
 
 ---
 
@@ -157,11 +209,14 @@ workflow can also be triggered manually from the Actions tab.
 
 ### Roadmap
 
-- [x] MVP: online pipeline end-to-end (push-to-talk → detect → translate →
-      speak), JARVIS orb + space UI, on-screen transcripts.
+- [x] MVP: end-to-end pipeline (push-to-talk → detect → translate → speak),
+      JARVIS orb + space UI, on-screen transcripts.
+- [x] Live "talking" orb visualizer that reacts to the mic.
+- [x] Claude translator + Vercel serverless proxy (Claude-key-only web deploy).
+- [x] Device/browser voice engine (free, on-device, key-free).
 - [ ] Hands-free voice-activity detection (VAD) in addition to push-to-talk.
 - [ ] Group / multi-speaker sessions.
-- [ ] Offline fallback (whisper.cpp + NLLB-200 + Piper).
+- [ ] Higher-quality on-device offline translation (NLLB-200).
 - [ ] Realtime speech-to-speech for lower latency.
 
 ---

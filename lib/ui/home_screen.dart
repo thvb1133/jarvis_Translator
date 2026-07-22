@@ -75,7 +75,7 @@ class _OrbSection extends StatelessWidget {
         children: [
           const _Header(),
           const SizedBox(height: 12),
-          _ModeToggle(controller: controller),
+          _SettingsBar(controller: controller),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -200,10 +200,60 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _ModeToggle extends StatelessWidget {
-  const _ModeToggle({required this.controller});
+class _SettingsBar extends StatelessWidget {
+  const _SettingsBar({required this.controller});
 
   final PipelineController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 10,
+      runSpacing: 8,
+      children: [
+        _PillToggle(
+          left: const _Seg('Cloud', Icons.cloud_outlined),
+          right: const _Seg('Device', Icons.smartphone),
+          leftSelected: controller.voiceEngine == VoiceEngine.cloud,
+          onLeft: () => controller.setVoiceEngine(VoiceEngine.cloud),
+          onRight: () => controller.setVoiceEngine(VoiceEngine.device),
+        ),
+        _PillToggle(
+          left: const _Seg('OpenAI', Icons.auto_awesome),
+          right: const _Seg('Claude', Icons.psychology_alt),
+          leftSelected:
+              controller.translationProvider == TranslationProvider.openai,
+          onLeft: () =>
+              controller.setTranslationProvider(TranslationProvider.openai),
+          onRight: () =>
+              controller.setTranslationProvider(TranslationProvider.claude),
+        ),
+      ],
+    );
+  }
+}
+
+class _Seg {
+  const _Seg(this.label, this.icon);
+  final String label;
+  final IconData icon;
+}
+
+class _PillToggle extends StatelessWidget {
+  const _PillToggle({
+    required this.left,
+    required this.right,
+    required this.leftSelected,
+    required this.onLeft,
+    required this.onRight,
+  });
+
+  final _Seg left;
+  final _Seg right;
+  final bool leftSelected;
+  final VoidCallback onLeft;
+  final VoidCallback onRight;
 
   @override
   Widget build(BuildContext context) {
@@ -212,41 +262,24 @@ class _ModeToggle extends StatelessWidget {
       decoration: BoxDecoration(
         color: JarvisColors.panel.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(
-          color: JarvisColors.coreGlow.withValues(alpha: 0.2),
-        ),
+        border: Border.all(color: JarvisColors.coreGlow.withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _segment(
-            label: 'Online',
-            icon: Icons.cloud_outlined,
-            selected: controller.providerMode == ProviderMode.online,
-            onTap: () => controller.setProviderMode(ProviderMode.online),
-          ),
-          _segment(
-            label: 'Offline',
-            icon: Icons.wifi_off,
-            selected: controller.providerMode == ProviderMode.offline,
-            onTap: () => controller.setProviderMode(ProviderMode.offline),
-          ),
+          _segment(left, leftSelected, onLeft),
+          _segment(right, !leftSelected, onRight),
         ],
       ),
     );
   }
 
-  Widget _segment({
-    required String label,
-    required IconData icon,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
+  Widget _segment(_Seg seg, bool selected, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
           color: selected
               ? JarvisColors.accent.withValues(alpha: 0.85)
@@ -256,14 +289,12 @@ class _ModeToggle extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: selected ? Colors.white : JarvisColors.textMuted,
-            ),
+            Icon(seg.icon,
+                size: 15,
+                color: selected ? Colors.white : JarvisColors.textMuted),
             const SizedBox(width: 6),
             Text(
-              label,
+              seg.label,
               style: TextStyle(
                 color: selected ? Colors.white : JarvisColors.textMuted,
                 fontSize: 13,
@@ -364,12 +395,17 @@ class _NotReadyBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final offline = controller.providerMode == ProviderMode.offline;
-    final message = offline
-        ? 'Offline engines (whisper.cpp · NLLB-200 · Piper) arrive in phase 2. '
-            'Switch to Online to translate now.'
-        : 'No API key detected. Run with '
-            '--dart-define=OPENAI_API_KEY=sk-… to enable translation.';
+    final config = controller.config;
+    final String message;
+    if (!config.canTranslate) {
+      message = config.translationProvider == TranslationProvider.claude
+          ? 'Add a Claude key (ANTHROPIC_API_KEY) or a translate proxy to '
+              'enable translation.'
+          : 'Add OPENAI_API_KEY or a translate proxy to enable translation.';
+    } else {
+      message = 'Cloud voice needs OPENAI_API_KEY. Switch to Device voice '
+          '(free, no key) or add the key.';
+    }
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

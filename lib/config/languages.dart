@@ -9,6 +9,7 @@ class Language {
     required this.name,
     required this.nativeName,
     required this.flag,
+    this.locale = 'en-US',
   });
 
   /// ISO 639-1 code (e.g. `en`, `hi`, `gu`). Used by STT/translate/TTS layers.
@@ -22,6 +23,13 @@ class Language {
 
   /// Emoji flag used for a quick visual cue in the UI.
   final String flag;
+
+  /// BCP-47 locale (e.g. `en-US`, `hi-IN`) used by the device speech engines
+  /// (`speech_to_text` and `flutter_tts`).
+  final String locale;
+
+  /// The underscore form some STT engines expect (e.g. `en_US`).
+  String get sttLocaleId => locale.replaceAll('-', '_');
 
   @override
   bool operator ==(Object other) =>
@@ -43,14 +51,14 @@ class SupportedLanguages {
   );
 
   static const List<Language> all = [
-    Language(code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી', flag: '🇮🇳'),
-    Language(code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', flag: '🇮🇳'),
-    Language(code: 'en', name: 'English', nativeName: 'English', flag: '🇬🇧'),
-    Language(code: 'ar', name: 'Arabic', nativeName: 'العربية', flag: '🇸🇦'),
-    Language(code: 'fr', name: 'French', nativeName: 'Français', flag: '🇫🇷'),
-    Language(code: 'es', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸'),
-    Language(code: 'ko', name: 'Korean', nativeName: '한국어', flag: '🇰🇷'),
-    Language(code: 'ja', name: 'Japanese', nativeName: '日本語', flag: '🇯🇵'),
+    Language(code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી', flag: '🇮🇳', locale: 'gu-IN'),
+    Language(code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', flag: '🇮🇳', locale: 'hi-IN'),
+    Language(code: 'en', name: 'English', nativeName: 'English', flag: '🇬🇧', locale: 'en-US'),
+    Language(code: 'ar', name: 'Arabic', nativeName: 'العربية', flag: '🇸🇦', locale: 'ar-SA'),
+    Language(code: 'fr', name: 'French', nativeName: 'Français', flag: '🇫🇷', locale: 'fr-FR'),
+    Language(code: 'es', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸', locale: 'es-ES'),
+    Language(code: 'ko', name: 'Korean', nativeName: '한국어', flag: '🇰🇷', locale: 'ko-KR'),
+    Language(code: 'ja', name: 'Japanese', nativeName: '日本語', flag: '🇯🇵', locale: 'ja-JP'),
   ];
 
   /// All entries including the auto-detect sentinel (useful for source pickers).

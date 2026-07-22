@@ -23,6 +23,8 @@ dependencies:
   # Filesystem paths for temporary audio buffers
   path_provider: ^2.1.4
   path: ^1.9.0
+  speech_to_text: ^7.4.0
+  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:

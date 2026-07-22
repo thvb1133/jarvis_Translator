@@ -1,46 +1,50 @@
 import '../config/app_config.dart';
-import 'stt/offline_stt_service.dart';
 import 'stt/openai_stt_service.dart';
 import 'stt/stt_service.dart';
-import 'translate/offline_translate_service.dart';
+import 'translate/claude_translate_service.dart';
 import 'translate/openai_translate_service.dart';
 import 'translate/translate_service.dart';
-import 'tts/offline_tts_service.dart';
 import 'tts/openai_tts_service.dart';
 import 'tts/tts_service.dart';
+import 'voice/device_voice_input.dart';
+import 'voice/device_voice_output.dart';
+import 'voice/voice_io.dart';
 
-/// Resolves the concrete STT / translate / TTS providers for a given
-/// [ProviderMode]. Everything downstream depends only on the interfaces, so
-/// swapping providers (online ⇄ offline, or a different vendor) happens here
-/// and nowhere else.
+/// Resolves the concrete providers for the current configuration. Everything
+/// downstream depends only on the interfaces, so choosing a translator
+/// (OpenAI ⇄ Claude) or a voice engine (cloud ⇄ device/browser) happens here.
 class ProviderRegistry {
   ProviderRegistry(this.config)
-      : stt = _resolveStt(config),
-        translate = _resolveTranslate(config),
-        tts = _resolveTts(config);
+      : translate = _resolveTranslate(config),
+        cloudStt = OpenAiSttService(config),
+        cloudTts = OpenAiTtsService(config),
+        voiceInput = DeviceVoiceInput(),
+        voiceOutput = DeviceVoiceOutput();
 
   final AppConfig config;
-  final SttService stt;
+
   final TranslateService translate;
-  final TtsService tts;
 
-  bool get isReady => stt.isAvailable && translate.isAvailable && tts.isAvailable;
+  /// Cloud voice pipeline (used when [AppConfig.voiceEngine] is cloud).
+  final SttService cloudStt;
+  final TtsService cloudTts;
 
-  static SttService _resolveStt(AppConfig config) =>
-      switch (config.providerMode) {
-        ProviderMode.online => OpenAiSttService(config),
-        ProviderMode.offline => OfflineSttService(),
-      };
+  /// Device / browser voice pipeline (used when voice engine is device).
+  final VoiceInput voiceInput;
+  final VoiceOutput voiceOutput;
+
+  bool get usesDeviceVoice => config.voiceEngine == VoiceEngine.device;
+
+  /// Whether the pipeline can run end-to-end right now.
+  bool get isReady {
+    if (!config.canTranslate) return false;
+    if (usesDeviceVoice) return true; // device speech is assumed available
+    return cloudStt.isAvailable && cloudTts.isAvailable;
+  }
 
   static TranslateService _resolveTranslate(AppConfig config) =>
-      switch (config.providerMode) {
-        ProviderMode.online => OpenAiTranslateService(config),
-        ProviderMode.offline => OfflineTranslateService(),
-      };
-
-  static TtsService _resolveTts(AppConfig config) =>
-      switch (config.providerMode) {
-        ProviderMode.online => OpenAiTtsService(config),
-        ProviderMode.offline => OfflineTtsService(),
+      switch (config.translationProvider) {
+        TranslationProvider.openai => OpenAiTranslateService(config),
+        TranslationProvider.claude => ClaudeTranslateService(config),
       };
 }

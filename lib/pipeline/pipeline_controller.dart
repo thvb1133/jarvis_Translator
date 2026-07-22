@@ -12,10 +12,13 @@ import 'transcript_entry.dart';
 /// High-level status the UI reacts to (drives the orb animation + hints).
 enum PipelineStatus { idle, listening, thinking, speaking, error }
 
-/// Orchestrates the end-to-end live translation pipeline:
-/// capture → speech-to-text (auto-detect) → translate → text-to-speech → play.
+/// Orchestrates the end-to-end live translation pipeline. Two voice paths share
+/// the same translate stage:
 ///
-/// The mic is muted while speaking to avoid the app translating its own output.
+/// - **Cloud:** record file → OpenAI STT → translate → OpenAI TTS → play.
+/// - **Device/browser:** live recognition → translate → device speech.
+///
+/// The mic is muted while speaking to avoid translating our own output.
 class PipelineController extends ChangeNotifier {
   PipelineController({
     required AppConfig config,
@@ -36,47 +39,47 @@ class PipelineController extends ChangeNotifier {
   final MicRecorder _recorder;
   final AudioPlayback _playback;
 
-  ProviderMode get providerMode => _config.providerMode;
-
-  /// Swaps the active provider family (online ⇄ offline) at runtime. Everything
-  /// downstream depends only on the service interfaces, so rebuilding the
-  /// registry here is all that's required.
-  void setProviderMode(ProviderMode mode) {
-    if (mode == _config.providerMode) return;
-    _config = _config.copyWith(providerMode: mode);
-    _registry = ProviderRegistry(_config);
-    resetError();
-    notifyListeners();
-  }
-
   PipelineStatus _status = PipelineStatus.idle;
   PipelineStatus get status => _status;
-
-  /// Live, normalized microphone level (0..1) driving the orb visualizer.
-  /// Exposed as a [ValueListenable] so the orb can repaint on audio without
-  /// rebuilding the whole widget tree.
-  final ValueNotifier<double> audioLevel = ValueNotifier<double>(0);
-  StreamSubscription<double>? _levelSub;
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
-  /// Source language for a session. `auto` means "detect the spoken language".
+  final ValueNotifier<double> audioLevel = ValueNotifier<double>(0);
+  StreamSubscription<double>? _levelSub;
+
   Language _sourceLanguage = SupportedLanguages.auto;
   Language get sourceLanguage => _sourceLanguage;
 
-  /// Language the translation is spoken/shown in.
-  Language _targetLanguage =
-      SupportedLanguages.byCode('en');
+  Language _targetLanguage = SupportedLanguages.byCode('en');
   Language get targetLanguage => _targetLanguage;
 
   final List<TranscriptEntry> _transcript = [];
   List<TranscriptEntry> get transcript => List.unmodifiable(_transcript);
 
+  VoiceEngine get voiceEngine => _config.voiceEngine;
+  TranslationProvider get translationProvider => _config.translationProvider;
+
   bool get isBusy =>
       _status == PipelineStatus.thinking || _status == PipelineStatus.speaking;
 
-  bool get isReady => registry.isReady;
+  bool get isReady => _registry.isReady;
+
+  void setVoiceEngine(VoiceEngine engine) {
+    if (engine == _config.voiceEngine) return;
+    _config = _config.copyWith(voiceEngine: engine);
+    _registry = ProviderRegistry(_config);
+    resetError();
+    notifyListeners();
+  }
+
+  void setTranslationProvider(TranslationProvider provider) {
+    if (provider == _config.translationProvider) return;
+    _config = _config.copyWith(translationProvider: provider);
+    _registry = ProviderRegistry(_config);
+    resetError();
+    notifyListeners();
+  }
 
   void setSourceLanguage(Language language) {
     _sourceLanguage = language;
@@ -88,7 +91,6 @@ class PipelineController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Swaps source and target (auto-detect can't be a target, so it stays).
   void swapLanguages() {
     if (_sourceLanguage == SupportedLanguages.auto) return;
     final tmp = _sourceLanguage;
@@ -102,21 +104,122 @@ class PipelineController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Push-to-talk: begin capturing microphone audio.
   Future<void> startListening() async {
     if (_status != PipelineStatus.idle) return;
     _setError(null);
     try {
-      await _recorder.start();
-      _levelSub?.cancel();
-      _levelSub = _recorder.amplitudeStream().listen(
-        (v) => audioLevel.value = v,
-        onError: (_) {},
-      );
+      if (_registry.usesDeviceVoice) {
+        final ok = await _registry.voiceInput.init();
+        if (!ok) {
+          _fail('Speech recognition is unavailable here. Try Cloud voice.');
+          return;
+        }
+        await _registry.voiceInput.start(
+          localeId: _sourceLanguage == SupportedLanguages.auto
+              ? null
+              : _sourceLanguage.sttLocaleId,
+          onLevel: (v) => audioLevel.value = v,
+        );
+      } else {
+        await _recorder.start();
+        _levelSub?.cancel();
+        _levelSub = _recorder.amplitudeStream().listen(
+              (v) => audioLevel.value = v,
+              onError: (_) {},
+            );
+      }
       _setStatus(PipelineStatus.listening);
     } catch (e) {
-      _fail('Could not start recording: $e');
+      _fail('Could not start listening: $e');
     }
+  }
+
+  Future<void> stopAndTranslate() async {
+    if (_status != PipelineStatus.listening) return;
+    try {
+      if (_registry.usesDeviceVoice) {
+        final result = await _registry.voiceInput.stop();
+        await _resetLevel();
+        await _translateAndSpeakDevice(result.text, result.detectedLanguageCode);
+      } else {
+        final audioPath = await _recorder.stop();
+        await _stopLevelStream();
+        if (audioPath == null) {
+          _setStatus(PipelineStatus.idle);
+          return;
+        }
+        await _runCloudPipeline(audioPath);
+      }
+    } catch (e) {
+      await _stopLevelStream();
+      _fail('$e');
+    }
+  }
+
+  Future<void> _runCloudPipeline(String audioPath) async {
+    _setStatus(PipelineStatus.thinking);
+    final sttResult = await _registry.cloudStt.transcribe(
+      audioFilePath: audioPath,
+      languageHint: _sourceLanguage == SupportedLanguages.auto
+          ? null
+          : _sourceLanguage.code,
+    );
+    if (sttResult.isEmpty) {
+      _setStatus(PipelineStatus.idle);
+      return;
+    }
+    final detected = sttResult.detectedLanguageCode ?? _sourceLanguage.code;
+    final translated = await _registry.translate.translate(
+      text: sttResult.text,
+      targetLanguageCode: _targetLanguage.code,
+      sourceLanguageCode: detected,
+    );
+    _addTranscript(sttResult.text, translated, detected);
+
+    _setStatus(PipelineStatus.speaking);
+    final tts = await _registry.cloudTts.synthesize(
+      text: translated,
+      languageCode: _targetLanguage.code,
+    );
+    await _playback.playBytes(tts.bytes, format: tts.format);
+    _setStatus(PipelineStatus.idle);
+  }
+
+  Future<void> _translateAndSpeakDevice(String text, String? detectedCode) async {
+    if (text.trim().isEmpty) {
+      _setStatus(PipelineStatus.idle);
+      return;
+    }
+    _setStatus(PipelineStatus.thinking);
+    final source = detectedCode ??
+        (_sourceLanguage == SupportedLanguages.auto
+            ? null
+            : _sourceLanguage.code);
+    final translated = await _registry.translate.translate(
+      text: text,
+      targetLanguageCode: _targetLanguage.code,
+      sourceLanguageCode: source,
+    );
+    _addTranscript(text, translated, source ?? _sourceLanguage.code);
+
+    _setStatus(PipelineStatus.speaking);
+    await _registry.voiceOutput.speak(
+      translated,
+      bcp47Locale: _targetLanguage.locale,
+    );
+    _setStatus(PipelineStatus.idle);
+  }
+
+  void _addTranscript(String original, String translated, String sourceCode) {
+    _transcript.add(
+      TranscriptEntry(
+        originalText: original,
+        translatedText: translated,
+        sourceLanguageCode: sourceCode,
+        targetLanguageCode: _targetLanguage.code,
+      ),
+    );
+    notifyListeners();
   }
 
   Future<void> _stopLevelStream() async {
@@ -125,73 +228,8 @@ class PipelineController extends ChangeNotifier {
     audioLevel.value = 0;
   }
 
-  /// Push-to-talk release: stop capture and run the translation pipeline.
-  Future<void> stopAndTranslate() async {
-    if (_status != PipelineStatus.listening) return;
-    String? audioPath;
-    try {
-      audioPath = await _recorder.stop();
-    } catch (e) {
-      await _stopLevelStream();
-      _fail('Could not stop recording: $e');
-      return;
-    }
-    await _stopLevelStream();
-
-    if (audioPath == null) {
-      _setStatus(PipelineStatus.idle);
-      return;
-    }
-
-    await _runPipeline(audioPath);
-  }
-
-  Future<void> _runPipeline(String audioPath) async {
-    _setStatus(PipelineStatus.thinking);
-    try {
-      final sttResult = await registry.stt.transcribe(
-        audioFilePath: audioPath,
-        languageHint: _sourceLanguage == SupportedLanguages.auto
-            ? null
-            : _sourceLanguage.code,
-      );
-
-      if (sttResult.isEmpty) {
-        _setStatus(PipelineStatus.idle);
-        return;
-      }
-
-      final detectedCode =
-          sttResult.detectedLanguageCode ?? _sourceLanguage.code;
-
-      final translated = await registry.translate.translate(
-        text: sttResult.text,
-        targetLanguageCode: _targetLanguage.code,
-        sourceLanguageCode: detectedCode,
-      );
-
-      _transcript.add(
-        TranscriptEntry(
-          originalText: sttResult.text,
-          translatedText: translated,
-          sourceLanguageCode: detectedCode,
-          targetLanguageCode: _targetLanguage.code,
-        ),
-      );
-      notifyListeners();
-
-      // Mic stays muted (we are not recording) for the whole spoken segment.
-      _setStatus(PipelineStatus.speaking);
-      final tts = await registry.tts.synthesize(
-        text: translated,
-        languageCode: _targetLanguage.code,
-      );
-      await _playback.playBytes(tts.bytes, format: tts.format);
-
-      _setStatus(PipelineStatus.idle);
-    } catch (e) {
-      _fail('$e');
-    }
+  Future<void> _resetLevel() async {
+    audioLevel.value = 0;
   }
 
   void _setStatus(PipelineStatus status) {
@@ -210,7 +248,6 @@ class PipelineController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Clears an error state back to idle so the user can retry.
   void resetError() {
     if (_status == PipelineStatus.error) {
       _status = PipelineStatus.idle;

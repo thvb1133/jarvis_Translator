@@ -51,6 +51,7 @@ jobs:
         run: |
           flutter build web --release \
             --base-href "/jarvis_Translator/" \
+            --dart-define=VOICE_ENGINE=device \
             --dart-define=OPENAI_API_KEY="${OPENAI_API_KEY}"
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

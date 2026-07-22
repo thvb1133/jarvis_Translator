@@ -1,16 +1,19 @@
 import 'package:flutter/foundation.dart';
 
-/// Which family of providers should back the translation pipeline.
-///
-/// The MVP ships the [online] path (OpenAI). [offline] is reserved for phase 2
-/// (whisper.cpp + NLLB-200 + Piper) and is wired through the same interfaces.
-enum ProviderMode { online, offline }
+/// Which service translates text.
+enum TranslationProvider { openai, claude }
 
-/// Central, read-only configuration for the app.
+/// Which engine handles listening (STT) and speaking (TTS).
 ///
-/// Secrets are **never** hardcoded. They are read from the environment via
-/// `--dart-define` (e.g. `--dart-define=OPENAI_API_KEY=sk-...`) which maps
-/// cleanly onto Cloud Agent / CI secrets and local `.env`-style workflows.
+/// - [cloud]: OpenAI Whisper + OpenAI TTS (needs an OpenAI key).
+/// - [device]: the device / browser's built-in speech engines via
+///   `speech_to_text` + `flutter_tts` — free, no key, works offline on device,
+///   and is what makes a **Claude-key-only** web deployment possible.
+enum VoiceEngine { cloud, device }
+
+/// Central, read-only configuration. Secrets are **never** hardcoded — they are
+/// read from the environment via `--dart-define`, which maps cleanly onto CI /
+/// Cloud Agent / Vercel secrets.
 class AppConfig {
   const AppConfig({
     required this.openAiApiKey,
@@ -19,20 +22,49 @@ class AppConfig {
     required this.translateModel,
     required this.ttsModel,
     required this.ttsVoice,
-    required this.providerMode,
+    required this.anthropicApiKey,
+    required this.anthropicBaseUrl,
+    required this.anthropicModel,
+    required this.translateProxyUrl,
+    required this.translationProvider,
+    required this.voiceEngine,
   });
 
+  // OpenAI
   final String openAiApiKey;
   final String openAiBaseUrl;
   final String sttModel;
   final String translateModel;
   final String ttsModel;
   final String ttsVoice;
-  final ProviderMode providerMode;
+
+  // Anthropic (Claude)
+  final String anthropicApiKey;
+  final String anthropicBaseUrl;
+  final String anthropicModel;
+
+  /// When set, translation requests go to this URL (a server-side proxy such as
+  /// a Vercel serverless function) instead of calling a provider directly. This
+  /// keeps the API key off the client — the recommended setup for web.
+  final String translateProxyUrl;
+
+  final TranslationProvider translationProvider;
+  final VoiceEngine voiceEngine;
 
   bool get hasOpenAiKey => openAiApiKey.trim().isNotEmpty;
+  bool get hasAnthropicKey => anthropicApiKey.trim().isNotEmpty;
+  bool get hasTranslateProxy => translateProxyUrl.trim().isNotEmpty;
 
-  AppConfig copyWith({ProviderMode? providerMode}) {
+  /// Whether translation is possible with the current settings.
+  bool get canTranslate => switch (translationProvider) {
+        TranslationProvider.openai => hasOpenAiKey || hasTranslateProxy,
+        TranslationProvider.claude => hasAnthropicKey || hasTranslateProxy,
+      };
+
+  AppConfig copyWith({
+    TranslationProvider? translationProvider,
+    VoiceEngine? voiceEngine,
+  }) {
     return AppConfig(
       openAiApiKey: openAiApiKey,
       openAiBaseUrl: openAiBaseUrl,
@@ -40,54 +72,75 @@ class AppConfig {
       translateModel: translateModel,
       ttsModel: ttsModel,
       ttsVoice: ttsVoice,
-      providerMode: providerMode ?? this.providerMode,
+      anthropicApiKey: anthropicApiKey,
+      anthropicBaseUrl: anthropicBaseUrl,
+      anthropicModel: anthropicModel,
+      translateProxyUrl: translateProxyUrl,
+      translationProvider: translationProvider ?? this.translationProvider,
+      voiceEngine: voiceEngine ?? this.voiceEngine,
     );
   }
 
-  /// Builds config from compile-time environment values.
   factory AppConfig.fromEnvironment() {
-    const key = String.fromEnvironment('OPENAI_API_KEY', defaultValue: '');
-    const baseUrl = String.fromEnvironment(
-      'OPENAI_BASE_URL',
-      defaultValue: 'https://api.openai.com/v1',
-    );
-    const stt = String.fromEnvironment(
-      'OPENAI_STT_MODEL',
-      defaultValue: 'whisper-1',
-    );
-    const translate = String.fromEnvironment(
-      'OPENAI_TRANSLATE_MODEL',
-      defaultValue: 'gpt-4o-mini',
-    );
-    const tts = String.fromEnvironment(
-      'OPENAI_TTS_MODEL',
-      defaultValue: 'gpt-4o-mini-tts',
-    );
-    const voice = String.fromEnvironment(
-      'OPENAI_TTS_VOICE',
-      defaultValue: 'alloy',
-    );
-    const mode = String.fromEnvironment(
-      'PROVIDER_MODE',
-      defaultValue: 'online',
-    );
+    const openAiKey = String.fromEnvironment('OPENAI_API_KEY', defaultValue: '');
+    const openAiBase = String.fromEnvironment('OPENAI_BASE_URL',
+        defaultValue: 'https://api.openai.com/v1');
+    const stt = String.fromEnvironment('OPENAI_STT_MODEL', defaultValue: 'whisper-1');
+    const openAiTranslate =
+        String.fromEnvironment('OPENAI_TRANSLATE_MODEL', defaultValue: 'gpt-4o-mini');
+    const tts = String.fromEnvironment('OPENAI_TTS_MODEL', defaultValue: 'gpt-4o-mini-tts');
+    const voice = String.fromEnvironment('OPENAI_TTS_VOICE', defaultValue: 'alloy');
 
-    return const AppConfig(
-      openAiApiKey: key,
-      openAiBaseUrl: baseUrl,
+    const anthropicKey = String.fromEnvironment('ANTHROPIC_API_KEY', defaultValue: '');
+    const anthropicBase = String.fromEnvironment('ANTHROPIC_BASE_URL',
+        defaultValue: 'https://api.anthropic.com/v1');
+    const anthropicModel = String.fromEnvironment('ANTHROPIC_MODEL',
+        defaultValue: 'claude-3-5-sonnet-latest');
+
+    const proxy = String.fromEnvironment('TRANSLATE_PROXY_URL', defaultValue: '');
+    const providerRaw = String.fromEnvironment('TRANSLATION_PROVIDER', defaultValue: '');
+    const engineRaw = String.fromEnvironment('VOICE_ENGINE', defaultValue: '');
+
+    // Sensible defaults: on the web the device/browser speech engine is the
+    // key-free voice path, so default to it there; native defaults to cloud.
+    const defaultEngine = kIsWeb ? VoiceEngine.device : VoiceEngine.cloud;
+    final engine = switch (engineRaw) {
+      'device' => VoiceEngine.device,
+      'cloud' => VoiceEngine.cloud,
+      _ => defaultEngine,
+    };
+
+    final provider = switch (providerRaw) {
+      'claude' => TranslationProvider.claude,
+      'openai' => TranslationProvider.openai,
+      // If only an Anthropic key/proxy is configured, prefer Claude.
+      _ => (anthropicKey.isNotEmpty && openAiKey.isEmpty)
+          ? TranslationProvider.claude
+          : TranslationProvider.openai,
+    };
+
+    return AppConfig(
+      openAiApiKey: openAiKey,
+      openAiBaseUrl: openAiBase,
       sttModel: stt,
-      translateModel: translate,
+      translateModel: openAiTranslate,
       ttsModel: tts,
       ttsVoice: voice,
-      providerMode:
-          mode == 'offline' ? ProviderMode.offline : ProviderMode.online,
+      anthropicApiKey: anthropicKey,
+      anthropicBaseUrl: anthropicBase,
+      anthropicModel: anthropicModel,
+      translateProxyUrl: proxy,
+      translationProvider: provider,
+      voiceEngine: engine,
     );
   }
 
   void debugLogStatus() {
     if (kDebugMode) {
-      debugPrint('[JARVIS] provider mode: ${providerMode.name}');
-      debugPrint('[JARVIS] OpenAI key present: $hasOpenAiKey');
+      debugPrint('[JARVIS] translator: ${translationProvider.name}');
+      debugPrint('[JARVIS] voice engine: ${voiceEngine.name}');
+      debugPrint('[JARVIS] canTranslate: $canTranslate '
+          '(openai=$hasOpenAiKey claude=$hasAnthropicKey proxy=$hasTranslateProxy)');
     }
   }
 }

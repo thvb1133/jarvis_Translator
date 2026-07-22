@@ -12,7 +12,12 @@ void main() {
       translateModel: 'gpt-4o-mini',
       ttsModel: 'gpt-4o-mini-tts',
       ttsVoice: 'alloy',
-      providerMode: ProviderMode.online,
+      anthropicApiKey: '',
+      anthropicBaseUrl: 'https://api.anthropic.com/v1',
+      anthropicModel: 'claude-3-5-sonnet-latest',
+      translateProxyUrl: '',
+      translationProvider: TranslationProvider.openai,
+      voiceEngine: VoiceEngine.cloud,
     );
 
     await tester.pumpWidget(const JarvisApp(config: config));
