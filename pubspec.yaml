@@ -18,13 +18,15 @@ dependencies:
   record: ^5.1.2
   # Cross-platform audio playback for spoken translations
   audioplayers: ^6.1.0
+  # FREE on-device / in-browser speech recognition (no API key required)
+  speech_to_text: ^7.0.0
+  # FREE on-device / in-browser speech synthesis (no API key required)
+  flutter_tts: ^4.2.0
   # Runtime permission handling (microphone)
   permission_handler: ^11.3.1
   # Filesystem paths for temporary audio buffers
   path_provider: ^2.1.4
   path: ^1.9.0
-  speech_to_text: ^7.4.0
-  flutter_tts: ^4.2.5
 
 dev_dependencies:
   flutter_test:
