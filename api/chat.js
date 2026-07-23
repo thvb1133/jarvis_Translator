@@ -32,12 +32,34 @@ function kimchiSystem(language) {
   );
 }
 
-async function chatWithClaude({ messages, language }) {
-  const key = cleanKey(process.env.ANTHROPIC_API_KEY);
-  if (!key) throw new Error('ANTHROPIC_API_KEY is not set on the server.');
-  const model = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest';
+// Discover a valid Claude model for THIS account (model aliases like
+// "claude-3-5-sonnet-latest" 404 on some accounts). Prefer newest sonnet,
+// then haiku, then whatever is available. Cached across warm invocations.
+let cachedClaudeModel = null;
+async function resolveClaudeModel(key) {
+  if (process.env.ANTHROPIC_MODEL) return process.env.ANTHROPIC_MODEL;
+  if (cachedClaudeModel) return cachedClaudeModel;
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/models?limit=100', {
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    });
+    if (r.ok) {
+      const d = await r.json();
+      const ids = (d.data || []).map((m) => m.id);
+      cachedClaudeModel =
+        ids.find((i) => i.includes('sonnet')) ||
+        ids.find((i) => i.includes('haiku')) ||
+        ids[0] ||
+        null;
+    }
+  } catch (_) {
+    // fall through to default
+  }
+  return cachedClaudeModel || 'claude-3-5-sonnet-latest';
+}
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+async function callClaude(key, model, language, messages) {
+  return fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'x-api-key': key,
@@ -51,6 +73,24 @@ async function chatWithClaude({ messages, language }) {
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
     }),
   });
+}
+
+async function chatWithClaude({ messages, language }) {
+  const key = cleanKey(process.env.ANTHROPIC_API_KEY);
+  if (!key) throw new Error('ANTHROPIC_API_KEY is not set on the server.');
+
+  let model = await resolveClaudeModel(key);
+  let res = await callClaude(key, model, language, messages);
+
+  // If the chosen model isn't available, rediscover and retry once.
+  if (res.status === 404) {
+    cachedClaudeModel = null;
+    const discovered = await resolveClaudeModel(key);
+    if (discovered && discovered !== model) {
+      model = discovered;
+      res = await callClaude(key, model, language, messages);
+    }
+  }
 
   if (!res.ok) {
     throw new Error('Claude error ' + res.status + ': ' + (await res.text()));
