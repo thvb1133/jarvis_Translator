@@ -30,6 +30,7 @@ class AppConfig {
     required this.anthropicBaseUrl,
     required this.anthropicModel,
     required this.translateProxyUrl,
+    required this.chatProxyUrl,
     required this.translationProvider,
     required this.voiceEngine,
   });
@@ -52,12 +53,22 @@ class AppConfig {
   /// keeps the API key off the client — the recommended setup for web.
   final String translateProxyUrl;
 
+  /// When set, Kimchi's companion chat goes through this URL (a server-side
+  /// proxy such as a Vercel function at `/api/chat`) so the key stays off the
+  /// client — the recommended setup for web.
+  final String chatProxyUrl;
+
   final TranslationProvider translationProvider;
   final VoiceEngine voiceEngine;
 
   bool get hasOpenAiKey => openAiApiKey.trim().isNotEmpty;
   bool get hasAnthropicKey => anthropicApiKey.trim().isNotEmpty;
   bool get hasTranslateProxy => translateProxyUrl.trim().isNotEmpty;
+  bool get hasChatProxy => chatProxyUrl.trim().isNotEmpty;
+
+  /// Whether Kimchi's conversational companion can run. Chat needs an LLM, so
+  /// unlike translation there is no key-free option.
+  bool get canChat => hasOpenAiKey || hasAnthropicKey || hasChatProxy;
 
   /// Whether translation is possible with the current settings.
   bool get canTranslate => switch (translationProvider) {
@@ -82,6 +93,7 @@ class AppConfig {
       anthropicBaseUrl: anthropicBaseUrl,
       anthropicModel: anthropicModel,
       translateProxyUrl: translateProxyUrl,
+      chatProxyUrl: chatProxyUrl,
       translationProvider: translationProvider ?? this.translationProvider,
       voiceEngine: voiceEngine ?? this.voiceEngine,
     );
@@ -104,6 +116,7 @@ class AppConfig {
         defaultValue: 'claude-3-5-sonnet-latest');
 
     const proxy = String.fromEnvironment('TRANSLATE_PROXY_URL', defaultValue: '');
+    const chatProxy = String.fromEnvironment('CHAT_PROXY_URL', defaultValue: '');
     const providerRaw = String.fromEnvironment('TRANSLATION_PROVIDER', defaultValue: '');
     const engineRaw = String.fromEnvironment('VOICE_ENGINE', defaultValue: '');
 
@@ -140,6 +153,7 @@ class AppConfig {
       anthropicBaseUrl: anthropicBase,
       anthropicModel: anthropicModel,
       translateProxyUrl: proxy,
+      chatProxyUrl: chatProxy,
       translationProvider: provider,
       voiceEngine: engine,
     );

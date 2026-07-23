@@ -59,11 +59,16 @@ class _OrbSection extends StatelessWidget {
 
   final PipelineController controller;
 
+  bool get _companion => controller.mode == AppMode.companion;
+
   String get _statusLabel => switch (controller.status) {
-        PipelineStatus.idle => 'Hold to speak',
+        PipelineStatus.idle =>
+          _companion ? 'Hold to talk to Kimchi' : 'Hold to speak',
         PipelineStatus.listening => 'Listening…',
-        PipelineStatus.thinking => 'Translating…',
-        PipelineStatus.speaking => 'Speaking…',
+        PipelineStatus.thinking =>
+          _companion ? 'Kimchi is thinking…' : 'Translating…',
+        PipelineStatus.speaking =>
+          _companion ? 'Kimchi is speaking…' : 'Speaking…',
         PipelineStatus.error => 'Tap to dismiss error',
       };
 
@@ -178,21 +183,21 @@ class _Header extends StatelessWidget {
     return const Column(
       children: [
         Text(
-          'JARVIS',
+          'KIMACHI',
           style: TextStyle(
             color: JarvisColors.coreHot,
-            fontSize: 30,
+            fontSize: 32,
             fontWeight: FontWeight.w800,
-            letterSpacing: 8,
+            letterSpacing: 10,
           ),
         ),
         SizedBox(height: 2),
         Text(
-          'LIVE VOICE TRANSLATOR',
+          'KIMCHI JARVIS · LIVE TRANSLATOR',
           style: TextStyle(
             color: JarvisColors.textMuted,
             fontSize: 11,
-            letterSpacing: 4,
+            letterSpacing: 3,
           ),
         ),
       ],
@@ -209,11 +214,20 @@ class _SettingsBar extends StatelessWidget {
   Widget build(BuildContext context) {
     const voiceEngines = VoiceEngine.values;
     const providers = TranslationProvider.values;
+    const modes = AppMode.values;
     return Wrap(
       alignment: WrapAlignment.center,
       spacing: 10,
       runSpacing: 8,
       children: [
+        _MultiToggle(
+          segments: const [
+            _Seg('Translate', Icons.translate),
+            _Seg('Kimchi', Icons.pets),
+          ],
+          selectedIndex: modes.indexOf(controller.mode),
+          onSelect: (i) => controller.setMode(modes[i]),
+        ),
         _MultiToggle(
           segments: const [
             _Seg('Cloud', Icons.cloud_outlined),
@@ -313,11 +327,12 @@ class _LanguageBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final companion = controller.mode == AppMode.companion;
     return Row(
       children: [
         Expanded(
           child: LanguageSelector(
-            label: 'Speaker',
+            label: companion ? 'You speak' : 'Speaker',
             value: controller.sourceLanguage,
             options: SupportedLanguages.withAuto,
             onChanged: controller.setSourceLanguage,
@@ -326,14 +341,17 @@ class _LanguageBar extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: IconButton(
-            onPressed: controller.swapLanguages,
-            icon: const Icon(Icons.swap_horiz, color: JarvisColors.coreGlow),
-            tooltip: 'Swap languages',
+            onPressed: companion ? null : controller.swapLanguages,
+            icon: Icon(
+              companion ? Icons.arrow_forward : Icons.swap_horiz,
+              color: JarvisColors.coreGlow,
+            ),
+            tooltip: companion ? 'Kimchi replies in' : 'Swap languages',
           ),
         ),
         Expanded(
           child: LanguageSelector(
-            label: 'Translate to',
+            label: companion ? 'Kimchi speaks' : 'Translate to',
             value: controller.targetLanguage,
             options: SupportedLanguages.all,
             onChanged: controller.setTargetLanguage,
@@ -394,8 +412,12 @@ class _NotReadyBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final config = controller.config;
+    final companion = controller.mode == AppMode.companion;
     final String message;
-    if (!config.canTranslate) {
+    if (companion && !config.canChat) {
+      message = 'Kimchi needs a brain: add OPENAI_API_KEY or ANTHROPIC_API_KEY '
+          '(or a chat proxy). There is no key-free chat.';
+    } else if (!companion && !config.canTranslate) {
       message = config.translationProvider == TranslationProvider.claude
           ? 'Add a Claude key (ANTHROPIC_API_KEY) or a translate proxy to '
               'enable translation.'

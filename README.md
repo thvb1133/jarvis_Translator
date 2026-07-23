@@ -1,8 +1,12 @@
-# JARVIS Translator
+# Kimchi Jarvis (Kimachi)
 
-A cross-platform **live voice translator** built with **Flutter** — one codebase
-targeting **Android** and **Desktop (Windows / Linux / macOS)** (plus web for
-quick testing).
+**Kimchi Jarvis** — called **Kimachi** — is a cross-platform **live voice
+translator** built with **Flutter** — one codebase targeting **Android** and
+**Desktop (Windows / Linux / macOS)** (plus web for quick testing).
+
+> 💸 **Runs 100% free, no API key, no payment.** The default **Free** translator
+> (public MyMemory API) plus the **Device/browser** voice engine need no account
+> at all. OpenAI/Claude are optional upgrades (those require paid API credits).
 
 It listens to whoever is speaking, **auto-detects the spoken language**,
 translates it, and **speaks the translation out loud** in the other person's
@@ -67,6 +71,38 @@ That's it. Vercel builds the Flutter web app and serves the free translation
 proxy at `/api/translate`, so the live site translates for free. (I can't log
 into your Vercel account for you, but these are the only clicks needed — no
 payment, no keys.)
+
+---
+
+## 🐾 Meet Kimchi — your talkative AI companion
+
+Flip the top toggle from **Translate** to **Kimchi** and the orb becomes a
+friendly, talkative companion — part pet, part friend, part translator and
+search guide. Hold the orb, talk to Kimchi, and Kimchi **talks back out loud**,
+remembering the conversation.
+
+- Ask it to translate, explain something, give suggestions, or just chat.
+- Kimchi replies in the language you pick under **"Kimchi speaks"**.
+- Listening/speaking use the same voice engines as the translator (free Device
+  voice, or Cloud/OpenAI).
+
+**Kimchi needs a brain (an LLM), so companion mode needs a key** — there is no
+free chat engine like there is for translation. Use **one** of:
+
+- `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` at run time (native/desktop), or
+- the **Vercel** deploy with a key set server-side (recommended for web): add
+  `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) in Vercel → Settings → Environment
+  Variables. The build already points Kimchi at the `/api/chat` proxy, so your
+  key stays off the browser.
+
+```bash
+# Talk to Kimchi locally with a Claude key (free device voice):
+flutter run --dart-define=ANTHROPIC_API_KEY=sk-ant-... \
+            --dart-define=VOICE_ENGINE=device
+
+# ...or with an OpenAI key (cloud voice + Kimchi in one key):
+flutter run --dart-define=OPENAI_API_KEY=sk-...
+```
 
 ---
 

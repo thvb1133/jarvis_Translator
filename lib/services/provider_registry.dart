@@ -1,4 +1,9 @@
 import '../config/app_config.dart';
+import 'chat/chat_service.dart';
+import 'chat/claude_chat_service.dart';
+import 'chat/openai_chat_service.dart';
+import 'chat/proxy_chat_service.dart';
+import 'chat/unavailable_chat_service.dart';
 import 'stt/openai_stt_service.dart';
 import 'stt/stt_service.dart';
 import 'translate/claude_translate_service.dart';
@@ -17,6 +22,7 @@ import 'voice/voice_io.dart';
 class ProviderRegistry {
   ProviderRegistry(this.config)
       : translate = _resolveTranslate(config),
+        chat = _resolveChat(config),
         cloudStt = OpenAiSttService(config),
         cloudTts = OpenAiTtsService(config),
         voiceInput = DeviceVoiceInput(),
@@ -25,6 +31,9 @@ class ProviderRegistry {
   final AppConfig config;
 
   final TranslateService translate;
+
+  /// Kimchi's conversational companion backend.
+  final ChatService chat;
 
   /// Cloud voice pipeline (used when [AppConfig.voiceEngine] is cloud).
   final SttService cloudStt;
@@ -36,12 +45,16 @@ class ProviderRegistry {
 
   bool get usesDeviceVoice => config.voiceEngine == VoiceEngine.device;
 
-  /// Whether the pipeline can run end-to-end right now.
-  bool get isReady {
-    if (!config.canTranslate) return false;
+  bool get _voiceReady {
     if (usesDeviceVoice) return true; // device speech is assumed available
     return cloudStt.isAvailable && cloudTts.isAvailable;
   }
+
+  /// Whether the translator pipeline can run end-to-end right now.
+  bool get isReady => config.canTranslate && _voiceReady;
+
+  /// Whether Kimchi's companion (chat) mode can run end-to-end right now.
+  bool get isReadyForChat => chat.isAvailable && _voiceReady;
 
   static TranslateService _resolveTranslate(AppConfig config) =>
       switch (config.translationProvider) {
@@ -49,4 +62,13 @@ class ProviderRegistry {
         TranslationProvider.openai => OpenAiTranslateService(config),
         TranslationProvider.claude => ClaudeTranslateService(config),
       };
+
+  /// Chat backend selection is independent of the translator: prefer a proxy
+  /// (keeps keys server-side), else whichever key is present, else unavailable.
+  static ChatService _resolveChat(AppConfig config) {
+    if (config.hasChatProxy) return ProxyChatService(config);
+    if (config.hasOpenAiKey) return OpenAiChatService(config);
+    if (config.hasAnthropicKey) return ClaudeChatService(config);
+    return UnavailableChatService();
+  }
 }

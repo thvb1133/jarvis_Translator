@@ -16,6 +16,7 @@ void main() {
       anthropicBaseUrl: 'https://api.anthropic.com/v1',
       anthropicModel: 'claude-3-5-sonnet-latest',
       translateProxyUrl: '',
+      chatProxyUrl: '',
       translationProvider: TranslationProvider.openai,
       voiceEngine: VoiceEngine.cloud,
     );
@@ -23,7 +24,7 @@ void main() {
     await tester.pumpWidget(const JarvisApp(config: config));
     await tester.pump();
 
-    expect(find.text('JARVIS'), findsOneWidget);
-    expect(find.text('LIVE VOICE TRANSLATOR'), findsOneWidget);
+    expect(find.text('KIMACHI'), findsOneWidget);
+    expect(find.text('KIMCHI JARVIS · LIVE TRANSLATOR'), findsOneWidget);
   });
 }
