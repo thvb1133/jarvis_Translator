@@ -18,7 +18,7 @@ class JarvisApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (_) => PipelineController(config: config, registry: registry),
       child: MaterialApp(
-        title: 'JARVIS Translator',
+        title: 'Kimchi Jarvis',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.dark,
         home: const HomeScreen(),
