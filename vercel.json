@@ -2,6 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "echo 'no npm install needed'",
-  "buildCommand": "if [ -d flutter ]; then (cd flutter && git pull --ff-only); else git clone https://github.com/flutter/flutter.git -b stable --depth 1; fi && ./flutter/bin/flutter config --enable-web --no-analytics && ./flutter/bin/flutter pub get && ./flutter/bin/flutter build web --release --dart-define=TRANSLATE_PROXY_URL=/api/translate --dart-define=TRANSLATION_PROVIDER=claude --dart-define=VOICE_ENGINE=device",
+  "buildCommand": "if [ -d flutter ]; then (cd flutter && git pull --ff-only); else git clone https://github.com/flutter/flutter.git -b stable --depth 1; fi && ./flutter/bin/flutter config --enable-web --no-analytics && ./flutter/bin/flutter pub get && ./flutter/bin/flutter build web --release --dart-define=TRANSLATE_PROXY_URL=/api/translate --dart-define=TRANSLATION_PROVIDER=free --dart-define=VOICE_ENGINE=device",
   "outputDirectory": "build/web"
 }

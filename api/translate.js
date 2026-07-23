@@ -1,11 +1,15 @@
 // Vercel serverless function: server-side translation proxy.
 //
-// Keeps the API key OFF the client. The Flutter web app posts
+// Keeps any API key OFF the client. The Flutter web app posts
 // { text, target, source, provider } here and receives { translation }.
 //
-// Configure the key in Vercel → Project → Settings → Environment Variables:
-//   ANTHROPIC_API_KEY   (for Claude — this is the "Claude key only" setup)
-//   OPENAI_API_KEY      (optional, only if you also want the OpenAI translator)
+// Works with ZERO configuration: if no key is set (or the "free" provider is
+// requested) it uses a free, key-free translation endpoint server-side.
+//
+// Optional keys (Vercel → Project → Settings → Environment Variables) unlock the
+// higher-quality paid providers:
+//   OPENAI_API_KEY      (for the OpenAI translator)
+//   ANTHROPIC_API_KEY   (for the Claude translator)
 
 const LANG_NAMES = {
   gu: 'Gujarati', hi: 'Hindi', en: 'English', ar: 'Arabic',
@@ -24,6 +28,30 @@ function systemPrompt(source, target) {
     'meaning, tone and names. Respond with ONLY the translation, no quotes, ' +
     'no notes.'
   );
+}
+
+// Free, key-free translation via a public Google endpoint. Runs server-side so
+// there is no browser CORS issue and no API key or payment is required.
+async function translateFree({ text, source, target }) {
+  const sl = !source || source === 'auto' ? 'auto' : source;
+  const url =
+    'https://translate.googleapis.com/translate_a/single?client=gtx&sl=' +
+    encodeURIComponent(sl) +
+    '&tl=' +
+    encodeURIComponent(target) +
+    '&dt=t&q=' +
+    encodeURIComponent(text);
+
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error('Free translation error ' + res.status);
+  }
+  const data = await res.json();
+  const segments = Array.isArray(data) && Array.isArray(data[0]) ? data[0] : [];
+  return segments
+    .map((s) => (Array.isArray(s) ? s[0] : ''))
+    .join('')
+    .trim();
 }
 
 async function translateWithClaude({ text, source, target }) {
@@ -98,10 +126,16 @@ module.exports = async (req, res) => {
       res.status(400).json({ error: 'Missing "text" or "target".' });
       return;
     }
-    const useOpenAI = provider === 'openai' && process.env.OPENAI_API_KEY;
-    const translation = useOpenAI
-      ? await translateWithOpenAI({ text, source, target })
-      : await translateWithClaude({ text, source, target });
+    // Route to the requested provider when its key is available; otherwise fall
+    // back to the free engine so the deploy works with zero secrets.
+    let translation;
+    if (provider === 'openai' && process.env.OPENAI_API_KEY) {
+      translation = await translateWithOpenAI({ text, source, target });
+    } else if (provider === 'claude' && process.env.ANTHROPIC_API_KEY) {
+      translation = await translateWithClaude({ text, source, target });
+    } else {
+      translation = await translateFree({ text, source, target });
+    }
     res.status(200).json({ translation });
   } catch (err) {
     res.status(500).json({ error: String(err && err.message ? err.message : err) });
