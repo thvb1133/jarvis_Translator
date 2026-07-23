@@ -7,6 +7,18 @@
 //   ANTHROPIC_API_KEY   (for Claude — the "Claude key only" setup)
 //   OPENAI_API_KEY      (optional alternative)
 
+// Env values sometimes get pasted with surrounding whitespace or accidentally
+// duplicated across lines. Take the first whitespace-delimited token so a stray
+// newline / double-paste can never produce an invalid header value.
+function cleanKey(value) {
+  return (value || '').trim().split(/\s+/)[0] || '';
+}
+
+// Never leak a key in an error message.
+function redact(text) {
+  return String(text).replace(/sk-[A-Za-z0-9._-]+/g, 'sk-***');
+}
+
 function kimchiSystem(language) {
   const lang = language || 'the same language the user used';
   return (
@@ -21,7 +33,7 @@ function kimchiSystem(language) {
 }
 
 async function chatWithClaude({ messages, language }) {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = cleanKey(process.env.ANTHROPIC_API_KEY);
   if (!key) throw new Error('ANTHROPIC_API_KEY is not set on the server.');
   const model = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest';
 
@@ -52,7 +64,7 @@ async function chatWithClaude({ messages, language }) {
 }
 
 async function chatWithOpenAI({ messages, language }) {
-  const key = process.env.OPENAI_API_KEY;
+  const key = cleanKey(process.env.OPENAI_API_KEY);
   if (!key) throw new Error('OPENAI_API_KEY is not set on the server.');
   const model = process.env.OPENAI_TRANSLATE_MODEL || 'gpt-4o-mini';
 
@@ -98,6 +110,6 @@ module.exports = async (req, res) => {
       : await chatWithClaude({ messages, language });
     res.status(200).json({ reply });
   } catch (err) {
-    res.status(500).json({ error: String(err && err.message ? err.message : err) });
+    res.status(500).json({ error: redact(err && err.message ? err.message : err) });
   }
 };

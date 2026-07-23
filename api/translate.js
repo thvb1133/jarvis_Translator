@@ -16,6 +16,17 @@ const LANG_NAMES = {
   fr: 'French', es: 'Spanish', ko: 'Korean', ja: 'Japanese',
 };
 
+// Take the first whitespace-delimited token so a stray newline / double-paste
+// in an env var can never produce an invalid header value.
+function cleanKey(value) {
+  return (value || '').trim().split(/\s+/)[0] || '';
+}
+
+// Never leak a key in an error message.
+function redact(text) {
+  return String(text).replace(/sk-[A-Za-z0-9._-]+/g, 'sk-***');
+}
+
 function languageName(code) {
   if (!code || code === 'auto') return 'the detected language';
   return LANG_NAMES[code] || code;
@@ -55,7 +66,7 @@ async function translateFree({ text, source, target }) {
 }
 
 async function translateWithClaude({ text, source, target }) {
-  const key = process.env.ANTHROPIC_API_KEY;
+  const key = cleanKey(process.env.ANTHROPIC_API_KEY);
   if (!key) throw new Error('ANTHROPIC_API_KEY is not set on the server.');
   const model = process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest';
 
@@ -86,7 +97,7 @@ async function translateWithClaude({ text, source, target }) {
 }
 
 async function translateWithOpenAI({ text, source, target }) {
-  const key = process.env.OPENAI_API_KEY;
+  const key = cleanKey(process.env.OPENAI_API_KEY);
   if (!key) throw new Error('OPENAI_API_KEY is not set on the server.');
   const model = process.env.OPENAI_TRANSLATE_MODEL || 'gpt-4o-mini';
 
@@ -138,6 +149,6 @@ module.exports = async (req, res) => {
     }
     res.status(200).json({ translation });
   } catch (err) {
-    res.status(500).json({ error: String(err && err.message ? err.message : err) });
+    res.status(500).json({ error: redact(err && err.message ? err.message : err) });
   }
 };
