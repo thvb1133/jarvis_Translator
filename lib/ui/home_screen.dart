@@ -25,24 +25,25 @@ class HomeScreen extends StatelessWidget {
               return LayoutBuilder(
                 builder: (context, constraints) {
                   final isWide = constraints.maxWidth > 900;
-                  final orbSection = _OrbSection(controller: controller);
-                  final transcriptSection =
-                      _TranscriptSection(controller: controller);
-
                   if (isWide) {
                     return Row(
                       children: [
-                        Expanded(flex: 5, child: orbSection),
+                        Expanded(
+                          flex: 5,
+                          child: _OrbSection(controller: controller),
+                        ),
                         const VerticalDivider(width: 1, color: Colors.white10),
-                        Expanded(flex: 4, child: transcriptSection),
+                        Expanded(
+                          flex: 4,
+                          child: _TranscriptSection(controller: controller),
+                        ),
                       ],
                     );
                   }
-                  return Column(
-                    children: [
-                      Expanded(flex: 5, child: orbSection),
-                      Expanded(flex: 4, child: transcriptSection),
-                    ],
+                  return _MobileLayout(
+                    controller: controller,
+                    viewportHeight: constraints.maxHeight,
+                    viewportWidth: constraints.maxWidth,
                   );
                 },
               );
@@ -54,23 +55,68 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+String _statusLabelFor(PipelineController controller) {
+  final companion = controller.mode == AppMode.companion;
+  return switch (controller.status) {
+    PipelineStatus.idle =>
+      companion ? 'Hold to talk to Kimchi' : 'Hold the orb & speak',
+    PipelineStatus.listening => 'Listening…',
+    PipelineStatus.thinking =>
+      companion ? 'Kimchi is thinking…' : 'Translating…',
+    PipelineStatus.speaking =>
+      companion ? 'Kimchi is speaking…' : 'Speaking…',
+    PipelineStatus.error => 'Tap to dismiss error',
+  };
+}
+
+/// The orb plus its status text and any banners. Reused by both layouts.
+class _OrbBlock extends StatelessWidget {
+  const _OrbBlock({required this.controller, required this.size});
+
+  final PipelineController controller;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _PushToTalkOrb(controller: controller, size: size),
+        const SizedBox(height: 20),
+        Text(
+          _statusLabelFor(controller),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: JarvisColors.textPrimary,
+            fontSize: 18,
+            letterSpacing: 0.5,
+          ),
+        ),
+        if (controller.status == PipelineStatus.error &&
+            controller.errorMessage != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            controller.errorMessage!,
+            textAlign: TextAlign.center,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFFFF6B7A), fontSize: 12),
+          ),
+        ],
+        if (!controller.isReady) ...[
+          const SizedBox(height: 10),
+          _NotReadyBanner(controller: controller),
+        ],
+      ],
+    );
+  }
+}
+
+/// Desktop / wide layout: the orb fills the left pane.
 class _OrbSection extends StatelessWidget {
   const _OrbSection({required this.controller});
 
   final PipelineController controller;
-
-  bool get _companion => controller.mode == AppMode.companion;
-
-  String get _statusLabel => switch (controller.status) {
-        PipelineStatus.idle =>
-          _companion ? 'Hold to talk to Kimchi' : 'Hold to speak',
-        PipelineStatus.listening => 'Listening…',
-        PipelineStatus.thinking =>
-          _companion ? 'Kimchi is thinking…' : 'Translating…',
-        PipelineStatus.speaking =>
-          _companion ? 'Kimchi is speaking…' : 'Speaking…',
-        PipelineStatus.error => 'Tap to dismiss error',
-      };
 
   @override
   Widget build(BuildContext context) {
@@ -84,46 +130,11 @@ class _OrbSection extends StatelessWidget {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // Scale the orb to the available space so it never overflows on
-                // short screens while staying large and cinematic on big ones.
-                final orbSize = (constraints.biggest.shortestSide * 0.92)
+                final orbSize = (constraints.biggest.shortestSide * 0.9)
                     .clamp(180.0, 480.0);
                 return Center(
                   child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _PushToTalkOrb(controller: controller, size: orbSize),
-                        const SizedBox(height: 24),
-                        Text(
-                          _statusLabel,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: JarvisColors.textPrimary,
-                            fontSize: 18,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        if (controller.status == PipelineStatus.error &&
-                            controller.errorMessage != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            controller.errorMessage!,
-                            textAlign: TextAlign.center,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Color(0xFFFF6B7A),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                        if (!controller.isReady) ...[
-                          const SizedBox(height: 10),
-                          _NotReadyBanner(controller: controller),
-                        ],
-                      ],
-                    ),
+                    child: _OrbBlock(controller: controller, size: orbSize),
                   ),
                 );
               },
@@ -132,6 +143,54 @@ class _OrbSection extends StatelessWidget {
           const SizedBox(height: 12),
           _LanguageBar(controller: controller),
         ],
+      ),
+    );
+  }
+}
+
+/// Phone / narrow layout: a single scrolling page so the orb is always big and
+/// fully visible (and pressable), with controls and the transcript below it.
+class _MobileLayout extends StatelessWidget {
+  const _MobileLayout({
+    required this.controller,
+    required this.viewportHeight,
+    required this.viewportWidth,
+  });
+
+  final PipelineController controller;
+  final double viewportHeight;
+  final double viewportWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    // A comfortably large orb that always fits the phone width.
+    final orbSize = (viewportWidth * 0.7).clamp(180.0, 320.0);
+    return SingleChildScrollView(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minHeight: viewportHeight),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                children: [
+                  const _Header(),
+                  const SizedBox(height: 12),
+                  _SettingsBar(controller: controller),
+                  const SizedBox(height: 20),
+                  _OrbBlock(controller: controller, size: orbSize),
+                  const SizedBox(height: 20),
+                  _LanguageBar(controller: controller),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Colors.white10),
+            SizedBox(
+              height: 320,
+              child: _TranscriptSection(controller: controller),
+            ),
+          ],
+        ),
       ),
     );
   }
