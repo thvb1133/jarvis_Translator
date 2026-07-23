@@ -1,7 +1,11 @@
 import 'package:flutter/foundation.dart';
 
 /// Which service translates text.
-enum TranslationProvider { openai, claude }
+///
+/// - [free]: a public, key-free, no-payment endpoint (auto-detects language).
+///   This is the default so the app works with zero setup.
+/// - [openai] / [claude]: higher-quality paid providers (need an API key).
+enum TranslationProvider { free, openai, claude }
 
 /// Which engine handles listening (STT) and speaking (TTS).
 ///
@@ -57,6 +61,8 @@ class AppConfig {
 
   /// Whether translation is possible with the current settings.
   bool get canTranslate => switch (translationProvider) {
+        // Free needs no key or payment — always available.
+        TranslationProvider.free => true,
         TranslationProvider.openai => hasOpenAiKey || hasTranslateProxy,
         TranslationProvider.claude => hasAnthropicKey || hasTranslateProxy,
       };
@@ -111,12 +117,16 @@ class AppConfig {
     };
 
     final provider = switch (providerRaw) {
+      'free' => TranslationProvider.free,
       'claude' => TranslationProvider.claude,
       'openai' => TranslationProvider.openai,
-      // If only an Anthropic key/proxy is configured, prefer Claude.
-      _ => (anthropicKey.isNotEmpty && openAiKey.isEmpty)
-          ? TranslationProvider.claude
-          : TranslationProvider.openai,
+      // No explicit choice: pick a provider that will actually work with the
+      // configured secrets, else fall back to the key-free Free engine.
+      _ => openAiKey.isNotEmpty
+          ? TranslationProvider.openai
+          : (anthropicKey.isNotEmpty
+              ? TranslationProvider.claude
+              : TranslationProvider.free),
     };
 
     return AppConfig(

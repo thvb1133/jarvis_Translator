@@ -2,6 +2,7 @@ import '../config/app_config.dart';
 import 'stt/openai_stt_service.dart';
 import 'stt/stt_service.dart';
 import 'translate/claude_translate_service.dart';
+import 'translate/free_translate_service.dart';
 import 'translate/openai_translate_service.dart';
 import 'translate/translate_service.dart';
 import 'tts/openai_tts_service.dart';
@@ -44,6 +45,7 @@ class ProviderRegistry {
 
   static TranslateService _resolveTranslate(AppConfig config) =>
       switch (config.translationProvider) {
+        TranslationProvider.free => FreeTranslateService(config),
         TranslationProvider.openai => OpenAiTranslateService(config),
         TranslationProvider.claude => ClaudeTranslateService(config),
       };

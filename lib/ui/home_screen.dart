@@ -207,27 +207,29 @@ class _SettingsBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const voiceEngines = VoiceEngine.values;
+    const providers = TranslationProvider.values;
     return Wrap(
       alignment: WrapAlignment.center,
       spacing: 10,
       runSpacing: 8,
       children: [
-        _PillToggle(
-          left: const _Seg('Cloud', Icons.cloud_outlined),
-          right: const _Seg('Device', Icons.smartphone),
-          leftSelected: controller.voiceEngine == VoiceEngine.cloud,
-          onLeft: () => controller.setVoiceEngine(VoiceEngine.cloud),
-          onRight: () => controller.setVoiceEngine(VoiceEngine.device),
+        _MultiToggle(
+          segments: const [
+            _Seg('Cloud', Icons.cloud_outlined),
+            _Seg('Device', Icons.smartphone),
+          ],
+          selectedIndex: voiceEngines.indexOf(controller.voiceEngine),
+          onSelect: (i) => controller.setVoiceEngine(voiceEngines[i]),
         ),
-        _PillToggle(
-          left: const _Seg('OpenAI', Icons.auto_awesome),
-          right: const _Seg('Claude', Icons.psychology_alt),
-          leftSelected:
-              controller.translationProvider == TranslationProvider.openai,
-          onLeft: () =>
-              controller.setTranslationProvider(TranslationProvider.openai),
-          onRight: () =>
-              controller.setTranslationProvider(TranslationProvider.claude),
+        _MultiToggle(
+          segments: const [
+            _Seg('Free', Icons.money_off),
+            _Seg('OpenAI', Icons.auto_awesome),
+            _Seg('Claude', Icons.psychology_alt),
+          ],
+          selectedIndex: providers.indexOf(controller.translationProvider),
+          onSelect: (i) => controller.setTranslationProvider(providers[i]),
         ),
       ],
     );
@@ -240,20 +242,16 @@ class _Seg {
   final IconData icon;
 }
 
-class _PillToggle extends StatelessWidget {
-  const _PillToggle({
-    required this.left,
-    required this.right,
-    required this.leftSelected,
-    required this.onLeft,
-    required this.onRight,
+class _MultiToggle extends StatelessWidget {
+  const _MultiToggle({
+    required this.segments,
+    required this.selectedIndex,
+    required this.onSelect,
   });
 
-  final _Seg left;
-  final _Seg right;
-  final bool leftSelected;
-  final VoidCallback onLeft;
-  final VoidCallback onRight;
+  final List<_Seg> segments;
+  final int selectedIndex;
+  final ValueChanged<int> onSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -267,8 +265,8 @@ class _PillToggle extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _segment(left, leftSelected, onLeft),
-          _segment(right, !leftSelected, onRight),
+          for (var i = 0; i < segments.length; i++)
+            _segment(segments[i], i == selectedIndex, () => onSelect(i)),
         ],
       ),
     );
