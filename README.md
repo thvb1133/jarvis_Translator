@@ -14,6 +14,62 @@ Spanish, Korean, Japanese** — and the list is trivial to extend (see
 
 ---
 
+## ⚡ Free mode — no API key, no payment (default)
+
+You do **not** need an OpenAI/Claude key or any billing to use this app. Out of
+the box it runs on:
+
+- **Free translator** — a public, key-free translation engine that also
+  **auto-detects** the spoken language.
+- **Device / browser voice** — the built-in speech recognition and text-to-speech
+  on your phone/computer/browser (free, no key).
+
+So the default is **Translator: Free** + **Voice: Device** = a fully working live
+translator at **$0**. You can still switch to OpenAI or Claude in the top toggles
+if you have a key and want the highest quality.
+
+### Run it on your computer (localhost)
+
+```bash
+# 1. Install Flutter once: https://docs.flutter.dev/get-started/install
+# 2. From the project folder:
+flutter pub get
+
+# 3a. Desktop app (recommended for free mode — no key needed):
+flutter run -d macos      # or: -d windows / -d linux
+
+# 3b. Android phone/emulator plugged in:
+flutter run -d android
+
+# 3c. Web on localhost:
+flutter run -d chrome
+```
+
+Press and hold the orb, speak, and it translates and speaks back — no key.
+
+> **Web note:** the free translator's endpoint is blocked by browsers (CORS), so
+> on the **web** free translation works through the tiny server proxy included
+> here — which is exactly what the **Vercel** deploy below sets up automatically.
+> The **desktop and Android** apps call it directly and need no proxy.
+
+### Deploy it online for free (Vercel) — zero secrets
+
+This repo is preconfigured so a Vercel import "just works" with **no API keys**:
+
+1. Push this repo to GitHub (already done).
+2. Go to **https://vercel.com/new**, sign in with GitHub, and **Import**
+   `jarvis_Translator`.
+3. Framework Preset: **Other** (Vercel auto-reads [`vercel.json`](vercel.json)).
+   Leave everything default — **do not add any environment variable**.
+4. Click **Deploy**.
+
+That's it. Vercel builds the Flutter web app and serves the free translation
+proxy at `/api/translate`, so the live site translates for free. (I can't log
+into your Vercel account for you, but these are the only clicks needed — no
+payment, no keys.)
+
+---
+
 ## The JARVIS look
 
 - A large, glowing **sun-like orb** in the center that pulses while listening and
@@ -57,7 +113,9 @@ api/translate.js               # (repo root) Vercel serverless proxy — keeps t
 ### Two independent choices (both toggleable in the UI)
 
 **Translator**
-- **OpenAI** — a GPT chat model.
+- **Free** *(default)* — a public, key-free endpoint with auto-detect. No account
+  or payment. Best paired with the Device voice engine for a fully $0 setup.
+- **OpenAI** — a GPT chat model (needs an OpenAI key).
 - **Claude** — Anthropic. Great for translation; **note Claude does text only —
   it has no speech-to-text or text-to-speech**, so pair it with the Device voice
   engine below for a full voice translator.
@@ -73,9 +131,10 @@ So a **Claude-only** setup = **Translator: Claude** + **Voice engine: Device**.
 
 ---
 
-## How to get an API key (step by step)
+## (Optional) Upgrade quality with an API key
 
-You need **one** key. Pick the path that matches how you want to run it.
+**You don't need this for free mode above.** A paid key only buys higher-quality
+translation/voice. If you want it, pick the path that matches how you run it.
 
 ### OpenAI (recommended — one key does speech-to-text, translation, and voice)
 
