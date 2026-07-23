@@ -46,11 +46,12 @@ lib/
 ├── pipeline/
 │   ├── pipeline_controller.dart # orchestrates the full flow + app state
 │   └── transcript_entry.dart
-├── api/translate.js           # Vercel serverless proxy (keeps the key server-side)
 └── ui/
     ├── home_screen.dart
     ├── theme/app_theme.dart
     └── widgets/                # jarvis_orb, space_background, transcript_view, language_selector
+
+api/translate.js               # (repo root) Vercel serverless proxy — keeps the key server-side
 ```
 
 ### Two independent choices (both toggleable in the UI)
@@ -69,6 +70,44 @@ lib/
   browser — this is what makes a **Claude-key-only** web deployment possible.
 
 So a **Claude-only** setup = **Translator: Claude** + **Voice engine: Device**.
+
+---
+
+## How to get an API key (step by step)
+
+You need **one** key. Pick the path that matches how you want to run it.
+
+### OpenAI (recommended — one key does speech-to-text, translation, and voice)
+
+1. Go to **https://platform.openai.com/signup** and create an account (or log in).
+2. Add billing: **Settings → Billing → Add payment method** and load a few
+   dollars of credit (the API is pay-as-you-go and separate from ChatGPT Plus).
+3. Open **https://platform.openai.com/api-keys → Create new secret key**.
+4. Copy the key (starts with `sk-...`). **You only see it once** — save it safely.
+
+### Anthropic / Claude (text translation only — pair with the free Device voice)
+
+1. Go to **https://console.anthropic.com** and sign in.
+2. **Settings → Billing** and add credit.
+3. **API Keys → Create Key**, copy the key (starts with `sk-ant-...`).
+
+> Claude has no speech engine, so a Claude-only build uses the browser/device
+> voice for listening and speaking (see the Vercel deploy below).
+
+### Where to put the key
+
+| Where you run it            | Where the key goes                                                        |
+| --------------------------- | ------------------------------------------------------------------------- |
+| **Local / desktop / mobile**| Pass it on the command line via `--dart-define` (see Setup below).        |
+| **Cursor Cloud Agent**      | Dashboard → **Cloud Agents → Secrets** → add `OPENAI_API_KEY`.            |
+| **GitHub Actions (Pages/APK)** | Repo **Settings → Secrets and variables → Actions → New repository secret** → add `OPENAI_API_KEY`. |
+| **Vercel (secure web)**     | Project **Settings → Environment Variables** → add `ANTHROPIC_API_KEY`.   |
+
+> ⚠️ **Never commit a key to the repo**, and never paste a real key into a
+> **public** website build — a web bundle ships the key in client-side JS where
+> anyone can read it. For public web, use the **Vercel** path (key stays on the
+> server) or the **Device** voice engine (no key). Real keys are best used in the
+> native apps or behind the proxy.
 
 ---
 
@@ -195,6 +234,27 @@ on the server.
 > Chrome/Edge. Grant microphone permission when prompted. If a browser lacks
 > speech recognition, switch **Voice engine → Cloud** and add an `OPENAI_API_KEY`
 > instead.
+
+---
+
+## Get the Android app (APK)
+
+The [`build-android`](.github/workflows/build-android.yml) workflow builds an
+installable APK on every push and on demand:
+
+1. Open the repo's **Actions** tab → **Build Android APK** → a green run (or
+   click **Run workflow** to trigger one).
+2. Download **`jarvis-translator-apk`** from the run's **Summary → Artifacts**.
+3. Copy the APK to your Android phone and install it (enable "install from
+   unknown sources" when prompted).
+
+To bake a key into the APK so it translates immediately, add `OPENAI_API_KEY`
+(or `ANTHROPIC_API_KEY` / `TRANSLATE_PROXY_URL`) as a repo **Actions secret**
+first. Without a key the app still installs and runs the UI; the free **Device**
+voice engine works with no key (only translation needs one).
+
+For Play Store distribution you additionally need a Google Play developer account
+and app signing — out of scope for this repo's automated build.
 
 ---
 
