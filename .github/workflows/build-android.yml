@@ -1,0 +1,60 @@
+name: Build Android APK
+
+# Builds a sideloadable Android APK of the JARVIS Translator and uploads it as a
+# workflow artifact you can download from the run's "Summary" page.
+#
+# Keys are optional. If you add repo secrets (Settings → Secrets and variables →
+# Actions), they are baked into the build so the installed app can translate out
+# of the box. Otherwise the APK still installs and runs, showing the JARVIS UI
+# with a banner telling you which key to add. The free "Device" voice engine
+# needs no key at all — only translation does.
+
+on:
+  push:
+    branches:
+      - main
+      - "cursor/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: |
+          flutter build apk --release \
+            --dart-define=OPENAI_API_KEY="${OPENAI_API_KEY}" \
+            --dart-define=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+            --dart-define=TRANSLATE_PROXY_URL="${TRANSLATE_PROXY_URL}"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TRANSLATE_PROXY_URL: ${{ secrets.TRANSLATE_PROXY_URL }}
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-translator-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
