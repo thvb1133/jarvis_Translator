@@ -72,6 +72,17 @@ class PipelineController extends ChangeNotifier {
   AppMode _mode = AppMode.translator;
   AppMode get mode => _mode;
 
+  /// Hands-free: tap once, then just talk — the app keeps listening and
+  /// replying back and forth like a phone call. Requires the device voice
+  /// engine (browser/device speech), which reports end-of-utterance.
+  bool _handsFree = false;
+  bool get handsFree => _handsFree;
+
+  bool _conversationActive = false;
+  bool get conversationActive => _conversationActive;
+
+  bool _processingUtterance = false;
+
   VoiceEngine get voiceEngine => _config.voiceEngine;
   TranslationProvider get translationProvider => _config.translationProvider;
 
@@ -86,6 +97,106 @@ class PipelineController extends ChangeNotifier {
     _mode = mode;
     resetError();
     notifyListeners();
+  }
+
+  /// Enables/disables hands-free. Hands-free needs the device voice engine (it
+  /// reports natural end-of-speech), so turning it on switches to device voice.
+  void setHandsFree(bool value) {
+    if (value == _handsFree) return;
+    _handsFree = value;
+    if (value && _config.voiceEngine != VoiceEngine.device) {
+      _config = _config.copyWith(voiceEngine: VoiceEngine.device);
+      _registry = ProviderRegistry(_config);
+    }
+    if (!value) {
+      stopConversation();
+    }
+    notifyListeners();
+  }
+
+  /// Starts/stops a hands-free conversation (used by a single tap on the orb).
+  Future<void> toggleConversation() async {
+    if (_conversationActive) {
+      await stopConversation();
+    } else {
+      await startConversation();
+    }
+  }
+
+  Future<void> startConversation() async {
+    if (_conversationActive) return;
+    if (!isReady) return;
+    resetError();
+    _conversationActive = true;
+    notifyListeners();
+    await _listenTurn();
+  }
+
+  Future<void> stopConversation() async {
+    _conversationActive = false;
+    _processingUtterance = false;
+    try {
+      await _registry.voiceInput.cancel();
+    } catch (_) {}
+    await _stopLevelStream();
+    if (_status != PipelineStatus.error) _setStatus(PipelineStatus.idle);
+  }
+
+  /// One listen→respond→speak→(loop) turn of a hands-free conversation.
+  Future<void> _listenTurn() async {
+    if (!_conversationActive) return;
+    try {
+      final ok = await _registry.voiceInput.init();
+      if (!ok) {
+        _fail('Speech recognition is unavailable here.');
+        _conversationActive = false;
+        return;
+      }
+      _setStatus(PipelineStatus.listening);
+      await _registry.voiceInput.start(
+        localeId: _sourceLanguage == SupportedLanguages.auto
+            ? null
+            : _sourceLanguage.sttLocaleId,
+        onLevel: (v) => audioLevel.value = v,
+        onFinal: (text) => _handleUtterance(text),
+      );
+    } catch (e) {
+      _fail('$e');
+      _conversationActive = false;
+    }
+  }
+
+  Future<void> _handleUtterance(String text) async {
+    if (_processingUtterance) return;
+    _processingUtterance = true;
+    try {
+      await _registry.voiceInput.stop();
+      await _stopLevelStream();
+
+      if (text.trim().isNotEmpty) {
+        _setStatus(PipelineStatus.thinking);
+        final responseText = await _respond(text, null);
+        if (responseText.trim().isNotEmpty) {
+          _addTranscript(text, responseText, _sourceLanguage.code);
+          _setStatus(PipelineStatus.speaking);
+          await _registry.voiceOutput.speak(
+            responseText,
+            bcp47Locale: _targetLanguage.locale,
+          );
+        }
+      }
+
+      _processingUtterance = false;
+      if (_conversationActive) {
+        await _listenTurn();
+      } else {
+        _setStatus(PipelineStatus.idle);
+      }
+    } catch (e) {
+      _processingUtterance = false;
+      _conversationActive = false;
+      _fail('$e');
+    }
   }
 
   void setVoiceEngine(VoiceEngine engine) {
@@ -304,6 +415,7 @@ class PipelineController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _conversationActive = false;
     _levelSub?.cancel();
     audioLevel.dispose();
     _recorder.dispose();

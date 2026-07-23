@@ -7,31 +7,53 @@ import '../theme/app_theme.dart';
 /// Scrollable, chat-like view of the running conversation showing each
 /// utterance's original text and its translation.
 class TranscriptView extends StatelessWidget {
-  const TranscriptView({super.key, required this.entries});
+  const TranscriptView({
+    super.key,
+    required this.entries,
+    this.controller,
+    this.padding = const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+  });
 
   final List<TranscriptEntry> entries;
+
+  /// Optional external scroll controller (used by the mobile pull-up sheet so
+  /// dragging the sheet and scrolling the list share one controller).
+  final ScrollController? controller;
+
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
     if (entries.isEmpty) {
-      return const Center(
-        child: Text(
-          'Transcripts will appear here.\nHold the orb and speak.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: JarvisColors.textMuted, height: 1.5),
+      return SingleChildScrollView(
+        controller: controller,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+          child: Center(
+            child: Text(
+              'Transcripts will appear here.\nHold the orb (or tap in hands-free) and speak.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: JarvisColors.textMuted, height: 1.5),
+            ),
+          ),
         ),
       );
     }
 
-    return ListView.separated(
-      reverse: true,
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-      itemCount: entries.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final entry = entries[entries.length - 1 - index];
-        return _TranscriptCard(entry: entry);
-      },
+    return Scrollbar(
+      controller: controller,
+      thumbVisibility: true,
+      child: ListView.separated(
+        controller: controller,
+        reverse: true,
+        padding: padding,
+        itemCount: entries.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final entry = entries[entries.length - 1 - index];
+          return _TranscriptCard(entry: entry);
+        },
+      ),
     );
   }
 }

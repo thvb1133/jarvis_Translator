@@ -36,14 +36,23 @@ class DeviceVoiceInput implements VoiceInput {
   Future<void> start({
     String? localeId,
     void Function(double level)? onLevel,
+    void Function(String finalText)? onFinal,
   }) async {
     if (!_initialized) await init();
     if (!_available) {
       throw StateError('Speech recognition is not available on this device.');
     }
     _lastWords = '';
+    var reported = false;
     await _speech.listen(
-      onResult: (result) => _lastWords = result.recognizedWords,
+      onResult: (result) {
+        _lastWords = result.recognizedWords;
+        // Fire once when the engine marks the utterance final (a natural pause).
+        if (result.finalResult && onFinal != null && !reported) {
+          reported = true;
+          onFinal(_lastWords.trim());
+        }
+      },
       onSoundLevelChange: onLevel == null
           ? null
           : (level) {
@@ -55,6 +64,10 @@ class DeviceVoiceInput implements VoiceInput {
         partialResults: true,
         cancelOnError: true,
         localeId: localeId,
+        // In hands-free mode, stop after a short silence so turns flow
+        // naturally; in push-to-talk the user controls the stop.
+        pauseFor: Duration(seconds: onFinal != null ? 3 : 8),
+        listenFor: Duration(seconds: onFinal != null ? 30 : 120),
       ),
     );
   }

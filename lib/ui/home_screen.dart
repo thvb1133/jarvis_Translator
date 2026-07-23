@@ -57,10 +57,14 @@ class HomeScreen extends StatelessWidget {
 
 String _statusLabelFor(PipelineController controller) {
   final companion = controller.mode == AppMode.companion;
+  if (controller.status == PipelineStatus.idle && controller.handsFree) {
+    return companion ? 'Tap to chat hands-free' : 'Tap to start hands-free';
+  }
   return switch (controller.status) {
     PipelineStatus.idle =>
       companion ? 'Hold to talk to Kimchi' : 'Hold the orb & speak',
-    PipelineStatus.listening => 'Listening…',
+    PipelineStatus.listening =>
+      controller.handsFree ? 'Listening… (tap to stop)' : 'Listening…',
     PipelineStatus.thinking =>
       companion ? 'Kimchi is thinking…' : 'Translating…',
     PipelineStatus.speaking =>
@@ -164,13 +168,15 @@ class _MobileLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // A comfortably large orb that always fits the phone width.
-    final orbSize = (viewportWidth * 0.7).clamp(180.0, 320.0);
-    return SingleChildScrollView(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minHeight: viewportHeight),
-        child: Column(
-          children: [
-            Padding(
+    final orbSize = (viewportWidth * 0.62).clamp(160.0, 300.0);
+    // Leave room at the bottom for the collapsed transcript sheet.
+    const collapsed = 0.16;
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.only(bottom: viewportHeight * collapsed + 16),
+            child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Column(
                 children: [
@@ -184,13 +190,90 @@ class _MobileLayout extends StatelessWidget {
                 ],
               ),
             ),
-            const Divider(height: 1, color: Colors.white10),
-            SizedBox(
-              height: 320,
-              child: _TranscriptSection(controller: controller),
-            ),
-          ],
+          ),
         ),
+        // Pull-up / pull-down transcript with its own scrollbar.
+        DraggableScrollableSheet(
+          initialChildSize: collapsed,
+          minChildSize: 0.1,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) => _TranscriptSheet(
+            controller: controller,
+            scrollController: scrollController,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The draggable transcript panel on phones — pull it up to read, down to hide.
+class _TranscriptSheet extends StatelessWidget {
+  const _TranscriptSheet({
+    required this.controller,
+    required this.scrollController,
+  });
+
+  final PipelineController controller;
+  final ScrollController scrollController;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A1230).withValues(alpha: 0.97),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        border: Border.all(color: JarvisColors.coreGlow.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        children: [
+          // Drag handle.
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 4),
+            child: Container(
+              width: 44,
+              height: 4,
+              decoration: BoxDecoration(
+                color: JarvisColors.textMuted.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 8, 4),
+            child: Row(
+              children: [
+                const Text(
+                  'TRANSCRIPT',
+                  style: TextStyle(
+                    color: JarvisColors.textMuted,
+                    fontSize: 12,
+                    letterSpacing: 3,
+                  ),
+                ),
+                const Spacer(),
+                if (controller.transcript.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: controller.clearTranscript,
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Clear'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: JarvisColors.textMuted,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: TranscriptView(
+                entries: controller.transcript,
+                controller: scrollController,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -208,6 +291,24 @@ class _PushToTalkOrb extends StatelessWidget {
       if (controller.status == PipelineStatus.error) controller.resetError();
     }
 
+    final orb = JarvisOrb(
+      status: controller.status,
+      size: size,
+      level: controller.audioLevel,
+    );
+
+    // Hands-free: a single tap starts/stops the back-and-forth conversation.
+    if (controller.handsFree) {
+      return GestureDetector(
+        onTap: () {
+          handleError();
+          controller.toggleConversation();
+        },
+        child: orb,
+      );
+    }
+
+    // Default: push-to-talk (hold to speak, release to send).
     return GestureDetector(
       onTapDown: (_) {
         handleError();
@@ -225,11 +326,7 @@ class _PushToTalkOrb extends StatelessWidget {
           controller.stopAndTranslate();
         }
       },
-      child: JarvisOrb(
-        status: controller.status,
-        size: size,
-        level: controller.audioLevel,
-      ),
+      child: orb,
     );
   }
 }
@@ -286,6 +383,14 @@ class _SettingsBar extends StatelessWidget {
           ],
           selectedIndex: modes.indexOf(controller.mode),
           onSelect: (i) => controller.setMode(modes[i]),
+        ),
+        _MultiToggle(
+          segments: const [
+            _Seg('Hold', Icons.touch_app),
+            _Seg('Hands-free', Icons.graphic_eq),
+          ],
+          selectedIndex: controller.handsFree ? 1 : 0,
+          onSelect: (i) => controller.setHandsFree(i == 1),
         ),
         _MultiToggle(
           segments: const [
