@@ -107,6 +107,27 @@ async function callClaude(key, model, source, target, text) {
   });
 }
 
+async function forceDiscoverClaudeModel(key) {
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/models?limit=100', {
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    });
+    if (r.ok) {
+      const d = await r.json();
+      const ids = (d.data || []).map((m) => m.id);
+      return (
+        ids.find((i) => i.includes('sonnet')) ||
+        ids.find((i) => i.includes('haiku')) ||
+        ids[0] ||
+        null
+      );
+    }
+  } catch (_) {
+    // ignore
+  }
+  return null;
+}
+
 async function translateWithClaude({ text, source, target }) {
   const key = cleanKey(process.env.ANTHROPIC_API_KEY);
   if (!key) throw new Error('ANTHROPIC_API_KEY is not set on the server.');
@@ -116,8 +137,9 @@ async function translateWithClaude({ text, source, target }) {
 
   if (res.status === 404) {
     cachedClaudeModel = null;
-    const discovered = await resolveClaudeModel(key);
+    const discovered = await forceDiscoverClaudeModel(key);
     if (discovered && discovered !== model) {
+      cachedClaudeModel = discovered;
       model = discovered;
       res = await callClaude(key, model, source, target, text);
     }

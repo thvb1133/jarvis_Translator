@@ -75,6 +75,29 @@ async function callClaude(key, model, language, messages) {
   });
 }
 
+// Always query the account's real model list (ignores any env override), used
+// to self-heal when the configured/default model 404s.
+async function forceDiscoverClaudeModel(key) {
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/models?limit=100', {
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    });
+    if (r.ok) {
+      const d = await r.json();
+      const ids = (d.data || []).map((m) => m.id);
+      return (
+        ids.find((i) => i.includes('sonnet')) ||
+        ids.find((i) => i.includes('haiku')) ||
+        ids[0] ||
+        null
+      );
+    }
+  } catch (_) {
+    // ignore
+  }
+  return null;
+}
+
 async function chatWithClaude({ messages, language }) {
   const key = cleanKey(process.env.ANTHROPIC_API_KEY);
   if (!key) throw new Error('ANTHROPIC_API_KEY is not set on the server.');
@@ -82,11 +105,13 @@ async function chatWithClaude({ messages, language }) {
   let model = await resolveClaudeModel(key);
   let res = await callClaude(key, model, language, messages);
 
-  // If the chosen model isn't available, rediscover and retry once.
+  // If the chosen model isn't available (even a wrong env override), discover a
+  // real one from the account and retry once.
   if (res.status === 404) {
     cachedClaudeModel = null;
-    const discovered = await resolveClaudeModel(key);
+    const discovered = await forceDiscoverClaudeModel(key);
     if (discovered && discovered !== model) {
+      cachedClaudeModel = discovered;
       model = discovered;
       res = await callClaude(key, model, language, messages);
     }
